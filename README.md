@@ -44,7 +44,7 @@ python enhancement.py --test_dir <your_test_dir> --enhanced_dir <your_enhanced_d
 ```
 
 to generate the enhanced .wav files. The `--cpkt` parameter of `enhancement.py` should be the path to a trained model checkpoint, as stored by the logger in `logs/`.
-
+Check the paper and different options in `enhancement.py` for different posterior/predictor/corrector/diffusion parameters.
 
 ## Data Creation
 
