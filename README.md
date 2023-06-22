@@ -14,7 +14,7 @@ Audio examples and supplementary materials are available [on our project page](h
 
 ## Pretrained checkpoints
 
-- We provide pretrained checkpoints for the unconditional score model in the supplementary material
+- We provide pretrained checkpoints for the unconditional score model [here](https://drive.google.com/drive/folders/1XG0kc1gzEqWeu75W39QpjHrzAc4FD3HX?usp=sharing)
 Usage:
 - For resuming training, you can use the `--resume_from_checkpoint` option of `train.py`.
 - For evaluating these checkpoints, use the `--ckpt` option of `enhancement.py` (see section **Evaluation** below).
