@@ -64,9 +64,7 @@ We kindly ask you to cite our papers in your publication when using any of our r
 @article{lemercier2023derevdps,
   title={Diffusion Posterior Sampling for Informed Single-Channel Dereverberation},
   author={Lemercier, Jean-Marie and Welker, Simon and Gerkmann, Timo},
-  journal={arXiv preprint arXiv:2306.12286},
-  year={2022}
+  journal={IEEE Workshop on Applications of Signal Processing to Audio and Acoustics (WASPAA)},
+  year={2023}
 }
 ```
-
-This paper has been submitted to a conference and is currently under review. The appropriate citation may therefore change in the future.
