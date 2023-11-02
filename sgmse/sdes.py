@@ -261,7 +261,7 @@ class VEKarrasSDE(SDE):
 
     @property
     def T(self):
-        return 1
+        return self.sigma_max
 
     def sde(self, x, t, *args, **kwargs):
         diffusion = torch.sqrt(2 * t)
@@ -284,7 +284,7 @@ class VEKarrasSDE(SDE):
     def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
         if shape != y.shape:
             warnings.warn(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
-        std = self._std(torch.ones((y.shape[0],), device=y.device))
+        std = self._std(self.T * torch.ones((y.shape[0],), device=y.device))
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
         if unconditional_prior:
             return torch.randn_like(y) * std

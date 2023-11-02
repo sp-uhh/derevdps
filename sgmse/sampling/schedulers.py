@@ -31,11 +31,10 @@ class LinearScheduler(Scheduler):
 @SchedulerRegistry.register("karras")
 class KarrasScheduler(Scheduler):
 
-    def __init__(self, N, eps, sigma_min=3e-2, sigma_max=1., rho=7, **kwargs):
+    def __init__(self, N, eps, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
         super().__init__(N, eps)
         self.sigma_min = sigma_min
-        # self.sigma_max = sigma_max
-        self.sigma_max = 1.
+        self.sigma_max = sigma_max
         self.rho = rho
 
     def timesteps(self):
