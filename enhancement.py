@@ -55,7 +55,6 @@ base_parser = ArgumentParser(add_help=False)
 parser = ArgumentParser()
 for parser_ in (base_parser, parser):
     parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
-
     parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
     parser_.add_argument("--ckpt", required=True)
     parser_.add_argument("--n", type=int, default=-1, help="Number of cropped files")
