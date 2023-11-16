@@ -28,7 +28,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=50):
+def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=2500):
     if schedule == "none":
         return None
     if schedule == "const":
