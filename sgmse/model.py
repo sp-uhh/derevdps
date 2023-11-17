@@ -80,8 +80,8 @@ class ScoreModel(pl.LightningModule):
             self.sigma_data = kwargs["sigma_data"]
 
         self.nolog = nolog
-        sigma_bins = self.sde.get_sigma_bins(N=20)
-        self.loss_logger_diff = SigmaLossLogger(sigma_bins)
+        # sigma_bins = self.sde.get_sigma_bins(N=20)
+        # self.loss_logger_diff = SigmaLossLogger(sigma_bins)
 
     @staticmethod
     def add_argparse_args(parser):

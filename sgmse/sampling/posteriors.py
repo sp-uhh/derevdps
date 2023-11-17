@@ -66,7 +66,6 @@ class PosteriorSampling(Posterior):
         norm = torch.linalg.norm(difference)
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
         normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
-        print(normguide)
         x  = x + norm_grad * self.zeta / normguide * dt #dt < 0
         return x, A, norm, measurement_estimated, x_0_hat_linear
 
