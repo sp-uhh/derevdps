@@ -16,8 +16,10 @@ from sgmse import sampling
 from sgmse.sdes import SDERegistry
 from sgmse.backbones import BackboneRegistry
 from sgmse.util.inference import evaluate_model
-from sgmse.util.graphics import visualize_example, visualize_one
+from sgmse.util.graphics import visualize_example, visualize_one, plot_loss_by_sigma
 from sgmse.util.other import pad_spec, pad_time, si_sdr_torch
+from sgmse.util.train_utils import SigmaLossLogger
+
 VIS_EPOCHS = 5
 
 torch.autograd.set_detect_anomaly(True)
@@ -78,6 +80,8 @@ class ScoreModel(pl.LightningModule):
             self.sigma_data = kwargs["sigma_data"]
 
         self.nolog = nolog
+        sigma_bins = self.sde.get_sigma_bins(N=20)
+        self.loss_logger_diff = SigmaLossLogger(sigma_bins)
 
     @staticmethod
     def add_argparse_args(parser):
@@ -215,7 +219,8 @@ class ScoreModel(pl.LightningModule):
             t = self.sde._inverse_std(sigma)
         if self.preconditioning == "karras_eloi":
             a = torch.rand(x.shape[0], device=x.device)
-            ro = 10
+            # ro = 10
+            ro = self.sde.rho
             sigma = (self.sde.sigma_max**(1/ro) + a*(self.sde.sigma_min**(1/ro) - self.sde.sigma_max**(1/ro)))**ro
             t = self.sde._inverse_std(sigma)
         return t
@@ -256,7 +261,16 @@ class ScoreModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx)
         self.log('train_loss', loss, on_step=True, on_epoch=True, batch_size=self.data_module.batch_size)
+        if (batch_idx + 1) % 100 == 0:
+            self.log_loss_sigma()
+             
         return loss
+
+    def log_loss_sigma(self):
+        log_loss = self.loss_logger_diff.log_t_bins()
+        figure = plot_loss_by_sigma(log_loss, log_x=True, freescale=False)
+        self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/LossSigma", [figure])
+        self.loss_logger_diff.reset_loss()
 
     def validation_step(self, batch, batch_idx, discriminative=False, sr=16000):
         loss = self._step(batch, batch_idx)

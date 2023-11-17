@@ -152,7 +152,7 @@ class SpecsDataModule(pl.LightningDataModule):
 	def __init__(
 		self, base_dir="", format="wsj0", spatial_channels=1, batch_size=8,
 		n_fft=510, hop_length=128, num_frames=256, window="hann",
-		num_workers=8, dummy=False, spec_factor=0.15, spec_abs_exponent=0.5,
+		num_workers=8, dummy=False, spec_factor=0.1, spec_abs_exponent=1.0,
 		gpu=True, return_time=False, **kwargs
 	):
 		super().__init__()
