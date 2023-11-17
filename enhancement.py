@@ -20,13 +20,6 @@ import matplotlib.pyplot as plt
 
 EPS_LOG = 1e-10
 
-
-
-def scale_zeta(t60):
-    """ Current rule of thumb is: zeta should be larger if the t60 is low
-    """
-    return 1 / t60**2
-
 def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
 
     if args.operator != "none":

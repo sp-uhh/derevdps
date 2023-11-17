@@ -60,7 +60,7 @@ def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=1e8):
 
 
 def get_song_sampler(
-    predictor_name = "euler-maruyama", scheduler_name = "linear", sde = "ve", score_fn = None, sde_input = None, 
+    predictor_name = "euler-maruyama", scheduler_name = "ve-song", sde = "ve", score_fn = None, sde_input = None, 
     eps = 3e-2, probability_flow = True,  conditioning = "none",
     posterior_name = "none", operator = "none", measurement = None, A = None, zeta = 50, zeta_schedule = "lin-increase", linearization = None,
     corrector_name = "ald", r = .5, corrector_steps = 1, denoise = True,
@@ -94,7 +94,6 @@ def get_song_sampler(
     
     def song_sampler():
         """The Posterior sampler function."""
-        path = kwargs.get("path", None)
         zeta0 = posterior.zeta
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
@@ -133,8 +132,8 @@ def get_song_sampler(
 
 
 def get_karras_sampler(
-    predictor_name = "euler-heun", scheduler_name = "linear", sde = "ve", score_fn = None, sde_input = None, 
-    eps = 3e-2, probability_flow = True,  conditioning = "none", 
+    predictor_name = "euler-heun", scheduler_name = "edm", sde = "edm", score_fn = None, sde_input = None, 
+    eps = 0., probability_flow = True,  conditioning = "none", 
     posterior_name = "none", operator = "none", measurement = None, A = None, zeta = 50, zeta_schedule = "lin-increase", linearization = None,
     noise_std = 1.007, smin = 0.05, smax = .8, churn = .1,
     **kwargs
@@ -164,7 +163,6 @@ def get_karras_sampler(
     
     def karras_sampler():
         """The Posterior sampler function."""
-        path = kwargs.get("path", None)
         zeta0 = posterior.zeta
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A

@@ -13,12 +13,13 @@ import numpy as np
 import torchaudio
 
 from sgmse import sampling
-from sgmse.sdes import SDERegistry
+from sgmse.sdes import SDERegistry, VESDE, EDMSDE
 from sgmse.backbones import BackboneRegistry
 from sgmse.util.inference import evaluate_model
 from sgmse.util.graphics import visualize_example, visualize_one, plot_loss_by_sigma
 from sgmse.util.other import pad_spec, pad_time, si_sdr_torch
 from sgmse.util.train_utils import SigmaLossLogger
+from sgmse.sampling.schedulers import VESongScheduler, EDMScheduler
 
 VIS_EPOCHS = 5
 
@@ -80,7 +81,15 @@ class ScoreModel(pl.LightningModule):
             self.sigma_data = kwargs["sigma_data"]
 
         self.nolog = nolog
-        sigma_bins = self.sde.get_sigma_bins(N=20)
+        # Just for logging loss versus sigma
+        t_bins = np.linspace(0, self.sde.T, steps=20)
+        if isinstance(self.sde, VESDE):
+            scheduler = VESongScheduler(**self.sde.__dict__())
+        if isinstance(self.sde, EDMSDE):
+            scheduler = EDMScheduler(**self.sde.__dict__())
+        else:
+            print(f"Scheduler for this SDE {type(self.sde).__name__} not supported")
+        sigma_bins = scheduler.continuous_step(t_bins)
         self.loss_logger_diff = SigmaLossLogger(sigma_bins)
 
     @staticmethod
@@ -93,7 +102,7 @@ class ScoreModel(pl.LightningModule):
         parser.add_argument("--condition", default="noisy", choices=["noisy", "none"])
         parser.add_argument("--preconditioning", default="song", choices=["song", "karras", "karras_eloi"])
 
-        parser.add_argument("--sigma_data", type=float, default=0.1)
+        parser.add_argument("--sigma_data", type=float, default=1.7)
         parser.add_argument("--p_mean", type=float, default=-1.2)
         parser.add_argument("--p_std", type=float, default=1.2)
         parser.add_argument("--num_samples_unconditional", type=int, default=4, help="Number of generated unconditional samples during evaluation.")
@@ -219,9 +228,7 @@ class ScoreModel(pl.LightningModule):
             t = self.sde._inverse_std(sigma)
         if self.preconditioning == "karras_eloi":
             a = torch.rand(x.shape[0], device=x.device)
-            # ro = 10
-            ro = self.sde.rho
-            sigma = (self.sde.sigma_max**(1/ro) + a*(self.sde.sigma_min**(1/ro) - self.sde.sigma_max**(1/ro)))**ro
+            sigma = (self.sde.sigma_max**(1/self.sde.rho) + a*(self.sde.sigma_min**(1/self.sde.rho) - self.sde.sigma_max**(1/self.sde.rho)))**self.sde.rho
             t = self.sde._inverse_std(sigma)
         return t
 
