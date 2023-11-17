@@ -98,8 +98,8 @@ def get_song_sampler(
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        # timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
-        timesteps = torch.cat([ torch.linspace(sde.T, -1/scheduler.N, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
+        timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
+        # timesteps = torch.cat([ torch.linspace(sde.T, 1e-6, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
         print(sde.T, timesteps)
         pbar = tqdm.tqdm(list(range(sde.N)))
 

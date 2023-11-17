@@ -12,12 +12,13 @@ SchedulerRegistry = Registry("Scheduler")
 class Scheduler(abc.ABC):
     """The abstract class for a predictor algorithm."""
 
-    def __init__(self, N, **kwargs):
+    def __init__(self, N, eps=1e-6, **kwargs):
         super().__init__()
         self.N = N
+        self.eps = eps
 
     def reverse_timesteps(self, T):
-        lin_timesteps = torch.linspace(T, -1/self.N, self.N)
+        lin_timesteps = torch.linspace(T, self.eps, self.N)
         timesteps = self.continuous_step(lin_timesteps)
         return torch.cat([timesteps, torch.Tensor([0.])])
 
@@ -28,9 +29,8 @@ class Scheduler(abc.ABC):
 @SchedulerRegistry.register("ve-song")
 class VESongScheduler(Scheduler):
 
-    def __init__(self, N, eps=0, sigma_min=5e-2, sigma_max=5e-1, **kwargs):
-        super().__init__(N)
-        self.eps = eps
+    def __init__(self, N, eps=1e-6, sigma_min=5e-2, sigma_max=5e-1, **kwargs):
+        super().__init__(N, eps)
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
@@ -40,9 +40,8 @@ class VESongScheduler(Scheduler):
 @SchedulerRegistry.register("edm")
 class EDMScheduler(Scheduler):
 
-    def __init__(self, N, eps=0, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
-        super().__init__(N)
-        self.eps = eps
+    def __init__(self, N, eps=1e-6, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
+        super().__init__(N, eps)
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho
