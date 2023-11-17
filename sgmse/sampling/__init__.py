@@ -104,7 +104,8 @@ def get_song_sampler(
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
-            dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
+            # dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
+            dt = torch.Tensor([-1/49]).to(xt.device)
             t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
             if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)

@@ -197,8 +197,6 @@ class VESDE(SDE):
         sigma = torch.sqrt(t)
         # sigma = self.sigma_min * (self.sigma_max / self.sigma_min) ** t # TMP : I have not harmonized with std properly yet
         diffusion = sigma * np.sqrt(2 * self.logsig)
-        print("t", t)
-        print("g", diffusion)
         return .0, diffusion
 
     def _mean(self, x0, t, *args, **kwargs):
@@ -207,7 +205,6 @@ class VESDE(SDE):
     def _std(self, t, *args, **kwargs):
         # This is a full solution to the ODE for P(t) in our derivations, after choosing g(s) as in self.sde()
         # COnfirmed by Karras et al. eq. 199
-        print("std", self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1))
         return self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1)
         # return self.sigma_min*torch.sqrt(torch.exp(2 * self.logsig * t) - 1)  # TMP : I have not harmonized with std properly yet
 
