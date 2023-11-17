@@ -36,6 +36,7 @@ def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
         operator, A, zeta, zeta_schedule = None, None, None, None
 
     y, sr = torchaudio.load(file)
+    y = y[..., : int(3.5*sr)]
 
     return y, A, zeta, operator, zeta_schedule
         
@@ -48,7 +49,6 @@ base_parser = ArgumentParser(add_help=False)
 parser = ArgumentParser()
 for parser_ in (base_parser, parser):
     parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
-
     parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
     parser_.add_argument("--ckpt", required=True)
     parser_.add_argument("--n", type=int, default=-1, help="Number of cropped files")
@@ -66,7 +66,9 @@ for parser_ in (base_parser, parser):
 
     parser_.add_argument("--operator", type=str, default="reverberation", choices=["none"] + OperatorRegistry.get_all_names())
     parser_.add_argument("--posterior", type=str, default="dps", choices=["none"] + PosteriorRegistry.get_all_names())
-    parser_.add_argument("--zeta", type=float, default=50, help="Step size for log-likelihood term.")
+    parser_.add_argument("--zeta", type=float, default=2500, help="Step size for log-likelihood term." + 
+                         "Attention: in the paper the value reported is 50. However when rescaling by" + 
+                         "the usual number of steps N=50 (correction by dt in the code after submitting the paper), one needs to use the value zeta0*N = 2500")
     parser_.add_argument("--zeta_schedule", type=str, default="saw-tooth-increase", help="Anneal the log-likelihood term with a zeta step size schedule.")
     parser_.add_argument("--sw", type=float, default=None, help="Switching time between posteriors if posterior==switching.")
     
