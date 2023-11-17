@@ -12,10 +12,9 @@ SchedulerRegistry = Registry("Scheduler")
 class Scheduler(abc.ABC):
     """The abstract class for a predictor algorithm."""
 
-    def __init__(self, N, eps, **kwargs):
+    def __init__(self, N, **kwargs):
         super().__init__()
         self.N = N
-        self.eps = eps
 
     @abc.abstractmethod
     def timesteps(self):
@@ -24,6 +23,10 @@ class Scheduler(abc.ABC):
 @SchedulerRegistry.register("linear")
 class LinearScheduler(Scheduler):
     
+    def __init__(self, N, eps=0, **kwargs):
+        super().__init__(N)
+        self.eps = eps
+
     def timesteps(self):
         timesteps = torch.linspace(1., self.eps, self.N)
         return torch.cat([timesteps, torch.Tensor([0.])])
@@ -31,8 +34,9 @@ class LinearScheduler(Scheduler):
 @SchedulerRegistry.register("karras")
 class KarrasScheduler(Scheduler):
 
-    def __init__(self, N, eps, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
-        super().__init__(N, eps)
+    def __init__(self, N, eps=0, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
+        super().__init__(N)
+        self.eps = eps
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho

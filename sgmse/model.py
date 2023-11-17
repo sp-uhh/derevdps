@@ -16,9 +16,9 @@ from sgmse import sampling
 from sgmse.sdes import SDERegistry
 from sgmse.backbones import BackboneRegistry
 from sgmse.util.inference import evaluate_model
-from sgmse.util.graphics import visualize_example
+from sgmse.util.graphics import visualize_example, visualize_one
 from sgmse.util.other import pad_spec, pad_time, si_sdr_torch
-VIS_EPOCHS = 5 
+VIS_EPOCHS = 5
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -28,7 +28,9 @@ class ScoreModel(pl.LightningModule):
         lr: float = 1e-4, ema_decay: float = 0.999,
         t_eps: float = 3e-2, transform: str = 'none', nolog: bool = False,
         num_eval_files: int = 10, loss_type: str = 'mse', data_module_cls = None, 
-        condition: str = "none", **kwargs
+        condition: str = "none",
+        num_samples_unconditional: int = 1,
+        **kwargs
     ):
         """
         Create a new ScoreModel.
@@ -63,6 +65,7 @@ class ScoreModel(pl.LightningModule):
         self.t_eps = t_eps
         self.loss_type = loss_type
         self.num_eval_files = num_eval_files
+        self.num_samples_unconditional = num_samples_unconditional
 
         self.save_hyperparameters(ignore=['nolog'])
         self.data_module = data_module_cls(**kwargs)
@@ -84,11 +87,12 @@ class ScoreModel(pl.LightningModule):
         parser.add_argument("--num_eval_files", type=int, default=10, help="Number of files for speech enhancement performance evaluation during training.")
         parser.add_argument("--loss_type", type=str, default="mse", choices=("mse", "mae", "gaussian_entropy", "kristina", "sisdr", "time_mse"), help="The type of loss function to use.")
         parser.add_argument("--condition", default="noisy", choices=["noisy", "none"])
-        parser.add_argument("--preconditioning", default="song", choices=["song", "karras"])
+        parser.add_argument("--preconditioning", default="song", choices=["song", "karras", "karras_eloi"])
 
         parser.add_argument("--sigma_data", type=float, default=0.1)
         parser.add_argument("--p_mean", type=float, default=-1.2)
         parser.add_argument("--p_std", type=float, default=1.2)
+        parser.add_argument("--num_samples_unconditional", type=int, default=4, help="Number of generated unconditional samples during evaluation.")
 
         return parser
 
@@ -145,11 +149,12 @@ class ScoreModel(pl.LightningModule):
     def preconditioning_input(self, dnn_input, t):
         if self.preconditioning == "song":
             scale = 1.
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             scale = 1/torch.sqrt( self.sigma_data**2 + sigma**2)
             if scale.ndim and scale.ndim < dnn_input.ndim:
                 scale = scale.view(scale.size(0), *(1,)*(dnn_input.ndim - scale.ndim))
+
         return scale * dnn_input
 
     def preconditioning_noise(self, t):
@@ -163,19 +168,18 @@ class ScoreModel(pl.LightningModule):
             sigma = sigma.unsqueeze(0)
             return sigma
         
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             if not sigma.ndim:
                 sigma = sigma.unsqueeze(0)
             sigma = sigma **.25
-            # return .25 * torch.log(sigma + 1e-10)
             return sigma
 
     def preconditioning_output(self, dnn_output, t):
         if self.preconditioning == "song":
             sigma = self.sde._std(t).squeeze()
             scale = sigma
-        elif self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             scale = sigma * self.sigma_data / torch.sqrt( self.sigma_data**2 + sigma**2)
         if scale.ndim and scale.ndim < dnn_output.ndim:
@@ -185,7 +189,7 @@ class ScoreModel(pl.LightningModule):
     def preconditioning_skip(self, x, t):
         if self.preconditioning == "song":
             scale = 1.
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             scale = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
             if scale.ndim and scale.ndim < x.ndim:
@@ -197,7 +201,10 @@ class ScoreModel(pl.LightningModule):
             weight = 1. / sigma**2
         if self.preconditioning == "karras":
             weight = (sigma**2 + self.sigma_data**2) / (sigma + self.sigma_data)**2
+        if self.preconditioning == "karras_eloi":
+            weight = 1.
         return weight * loss
+
 
     def sample_time(self, x):
         if self.preconditioning == "song":
@@ -205,6 +212,11 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "karras":
             log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
             sigma = self.t_eps + torch.exp(log_sigma)
+            t = self.sde._inverse_std(sigma)
+        if self.preconditioning == "karras_eloi":
+            a = torch.rand(x.shape[0], device=x.device)
+            ro = 10
+            sigma = (self.sde.sigma_max**(1/ro) + a*(self.sde.sigma_min**(1/ro) - self.sde.sigma_max**(1/ro)))**ro
             t = self.sde._inverse_std(sigma)
         return t
 
@@ -225,6 +237,7 @@ class ScoreModel(pl.LightningModule):
             x, y = batch, None
         elif len(batch) == 2:
             x, y = batch
+
         t = self.sample_time(x)
         mean, std = self.sde.marginal_prob(x, t, y)
         z = torch.randn_like(x)
@@ -249,39 +262,57 @@ class ScoreModel(pl.LightningModule):
         loss = self._step(batch, batch_idx)
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
-        # Evaluate speech enhancement performance
         if batch_idx == 0 and self.num_eval_files != 0:
-            pesq_est, si_sdr_est, estoi_est, spec, audio = evaluate_model(self, self.num_eval_files, spec=not self.current_epoch%VIS_EPOCHS, audio=not self.current_epoch%VIS_EPOCHS, discriminative=discriminative)
-            print(f"PESQ at epoch {self.current_epoch} : {pesq_est:.2f}")
-            print(f"SISDR at epoch {self.current_epoch} : {si_sdr_est:.1f}")
-            print(f"ESTOI at epoch {self.current_epoch} : {estoi_est:.2f}")
-            print('__________________________________________________________________')
-            
-            self.log('ValidationPESQ', pesq_est, on_step=False, on_epoch=True)
-            self.log('ValidationSISDR', si_sdr_est, on_step=False, on_epoch=True)
-            self.log('ValidationESTOI', estoi_est, on_step=False, on_epoch=True)
-
-            if audio is not None and self.logger is not None:
-                y_list, x_hat_list, x_list = audio
-                for idx, (y, x_hat, x) in enumerate(zip(y_list, x_hat_list, x_list)):
-                    if self.current_epoch == 0:
-                        self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{idx}", (y / torch.max(torch.abs(y))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-                        self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{idx}", (x / torch.max(x)).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{idx}", (x_hat / torch.max(torch.abs(x_hat))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-
-            if spec is not None and self.logger is not None:
-                figures = []
-                y_stft_list, x_hat_stft_list, x_stft_list = spec
-                for idx, (y_stft, x_hat_stft, x_stft) in enumerate(zip(y_stft_list, x_hat_stft_list, x_stft_list)):
-                    figures.append(
-                        visualize_example(
-                        torch.abs(y_stft), 
-                        torch.abs(x_hat_stft), 
-                        torch.abs(x_stft), return_fig=True))
-                self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/Spec", figures)
+            # Inverse problem evaluation
+            self.run_evaluation(sr=sr, discriminative=discriminative)
+            # Unconditional sampling
+            self.run_unconditional_sampling(batch[0]*0, num_samples_unconditional=self.num_samples_unconditional, sampler_type="karras",predictor="euler", corrector="none", scheduler="karras", noise_std=1, smin=self.sde.sigma_min, smax=self.sde.sigma_max, churn=0)
 
         return loss
+    
+    def run_evaluation(self, sr: int = 16000, discriminative: bool = False):
+        # Evaluate speech enhancement performance
+        pesq_est, si_sdr_est, estoi_est, spec, audio = evaluate_model(self, self.num_eval_files, spec=not self.current_epoch%VIS_EPOCHS, audio=not self.current_epoch%VIS_EPOCHS, discriminative=discriminative)
+        print(f"PESQ at epoch {self.current_epoch} : {pesq_est:.2f}")
+        print(f"SISDR at epoch {self.current_epoch} : {si_sdr_est:.1f}")
+        print(f"ESTOI at epoch {self.current_epoch} : {estoi_est:.2f}")
+        print('__________________________________________________________________')
+        
+        self.log('ValidationPESQ', pesq_est, on_step=False, on_epoch=True)
+        self.log('ValidationSISDR', si_sdr_est, on_step=False, on_epoch=True)
+        self.log('ValidationESTOI', estoi_est, on_step=False, on_epoch=True)
 
+        if audio is not None and self.logger is not None:
+            y_list, x_hat_list, x_list = audio
+            for idx, (y, x_hat, x) in enumerate(zip(y_list, x_hat_list, x_list)):
+                if self.current_epoch == 0:
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{idx}", (y / torch.max(torch.abs(y))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{idx}", (x / torch.max(x)).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
+                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{idx}", (x_hat / torch.max(torch.abs(x_hat))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
+
+        if spec is not None and self.logger is not None:
+            figures = []
+            y_stft_list, x_hat_stft_list, x_stft_list = spec
+            for idx, (y_stft, x_hat_stft, x_stft) in enumerate(zip(y_stft_list, x_hat_stft_list, x_stft_list)):
+                figures.append(
+                    visualize_example(
+                    torch.abs(y_stft), 
+                    torch.abs(x_hat_stft), 
+                    torch.abs(x_stft), return_fig=True))
+            self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/Spec", figures)
+
+    def run_unconditional_sampling(self, *args, sr: int = 16000, **kwargs):
+        
+        figures = []
+        samples = self.unconditional_sampling(*args, **kwargs)
+
+        for idx in len(samples):
+            self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Unconditional/{idx}", (samples[idx] / torch.max(torch.abs(samples[idx]))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
+            figures.append(
+                visualize_one(
+                torch.abs(samples[idx]), return_fig=True))
+            self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/UnconditionalSpec", figures)
+            
     def to(self, *args, **kwargs):
         self.ema.to(*args, **kwargs)
         return super().to(*args, **kwargs)
@@ -370,7 +401,6 @@ class ScoreModel(pl.LightningModule):
         """
         One-call speech enhancement of noisy speech `y`, for convenience.
         """
-        start = time.time()
         T_orig = y.size(1)
 
         norm_factor = y.abs().max()
@@ -417,5 +447,50 @@ class ScoreModel(pl.LightningModule):
         else:
             x_hat = self.to_audio(sample.squeeze(), T_orig)
         x_hat = x_hat * norm_factor
+        x_hat = x_hat.squeeze().cpu()
+        return x_hat
+
+    def unconditional_sampling(self, reference_tensor, num_samples_unconditional=4,
+        sampler_type="song", probability_flow=True, N=50, scheduler="linear",
+        predictor="euler-maruyama",
+        posterior="none", operator="none", A=None, zeta=50., zeta_schedule="lin-increase",
+        corrector="ald", r=0.4, corrector_steps=1, 
+        noise_std=1.007, smin=0.05, smax=.8, churn=.1,
+        **kwargs
+    ):
+        """
+        One-call unconditional sampling, for convenience.
+        """
+        A = None
+        score_conditioning = []
+        operator = "none"
+        posterior = "none"
+        Y = reference_tensor[: num_samples_unconditional]
+        zeta=0
+
+        if sampler_type == "song":
+            sampler = self.get_song_sampler(
+                probability_flow=probability_flow,
+                predictor_name=predictor, scheduler_name=scheduler, sde_input=Y, N=N,
+                conditioning=score_conditioning, 
+                posterior_name=posterior, operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
+                corrector_name=corrector, r=r, corrector_steps=corrector_steps,
+                **kwargs)
+        elif sampler_type == "karras":
+            sampler = self.get_karras_sampler(
+                probability_flow=probability_flow,
+                predictor_name=predictor, scheduler_name=scheduler, sde_input=Y, N=N,
+                conditioning=score_conditioning, 
+                posterior_name=posterior, operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
+                noise_std=noise_std, smin=smin, smax=smax, churn=churn,
+                **kwargs)
+        else:
+            print("{} is not a valid sampler type!".format(sampler_type))
+        sample = sampler()[0]
+
+        if self.data_module.return_time:
+            x_hat = sample.squeeze()
+        else:
+            x_hat = self.to_audio(sample.squeeze() )
         x_hat = x_hat.squeeze().cpu()
         return x_hat

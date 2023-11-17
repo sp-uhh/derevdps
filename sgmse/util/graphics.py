@@ -62,3 +62,50 @@ def visualize_example(mix, estimate, target, idx_sample=0, epoch=0, name="", sam
 	fig.colorbar(im, cax=cbar_ax)
 
 	return fig
+
+
+
+def visualize_one(estimate, spec_path=None, name="", sample_rate=16000, hop_len=128, raw=True, return_figure=False):
+	"""Visualize training targets and estimates of the Neural Network
+	Args:
+		- mix: Tensor [F, T]
+		- estimates/targets: Tensor [F, T]
+	"""
+
+	if isinstance(estimate, torch.Tensor):
+		estimate = torch.abs(estimate).squeeze().detach().cpu()
+	elif type(estimate) == str:
+		estimate = np.squeeze(sf.read(estimate)[0])
+		norm_factor = 0.1/np.max(np.abs(estimate))
+		xmax = 6
+		estimate = estimate[..., : xmax*sample_rate]
+		# estimate = estimate[..., 16500: 16500+50000]
+		estimate = torch.stft(torch.from_numpy(norm_factor*estimate), **stft_kwargs)
+
+	vmin, vmax = -60, 0
+
+	freqs = sample_rate/(2*estimate.size(-2)) * torch.arange(estimate.size(-2))
+	frames = hop_len/sample_rate * torch.arange(estimate.size(-1))
+
+	fig = plt.figure(figsize=(8, 8))
+	im = plt.pcolormesh(frames, freqs, 20*np.log10(estimate.abs() + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
+
+	if raw:
+		plt.yticks([])
+		plt.tick_params(left="off")
+		plt.xticks([])
+		plt.tick_params(bottom="off")
+	else:
+		plt.xlabel('Time [s]')
+		plt.ylabel('Frequency [Hz]')
+		plt.title('Anechoic estimate')
+		cbar_ax = fig.add_axes([0.93, 0.25, 0.03, 0.4])
+		fig.colorbar(im, cax=cbar_ax)
+
+	if return_figure:
+		plt.close()
+		return fig
+	else:
+		assert spec_path is not None
+		plt.savefig(os.path.join(spec_path, name + ".png"), dpi=300, bbox_inches="tight")
+		plt.close()

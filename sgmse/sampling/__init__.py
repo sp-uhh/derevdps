@@ -28,7 +28,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=2500):
+def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=1e8):
     if schedule == "none":
         return None
     if schedule == "const":
@@ -173,16 +173,17 @@ def get_karras_sampler(
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
-            dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
             z = noise_std * torch.randn_like(xt)
             gamma = min(churn/sde.N, np.sqrt(2)-1.) if (timesteps[i] > smin and timesteps[i] < smax) else 0.
             t_overnoised = timesteps[i]*(1 + gamma)
+            dt = timesteps[i+1] - t_overnoised # dt < 0 (time flowing in reverse)
             if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), sde._std(t_overnoised).cpu().item(), zeta0)
-            xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
+            if gamma > 0:
+                xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
 
             # predictor
-            grad_required = posterior_name == "dps" or (posterior_name == "switching" and timesteps[i].item() > kwargs["sw"]) or (posterior_name == "reverse-switching" and timesteps[i].item() < kwargs["sw"])
+            grad_required = posterior.grad_required(timesteps[i].item(), **kwargs)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 xt, xt_mean, score = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
