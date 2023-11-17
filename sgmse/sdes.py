@@ -44,7 +44,8 @@ class SDE(abc.ABC):
     def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
         if shape != y.shape:
             print(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
-        starting_time_step = self.scheduler.continuous_step(self.T)
+        # starting_time_step = self.scheduler.continuous_step(self.T) 
+        starting_time_step = self.T # TMP : have not fixed scheduler yet
         std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
         if unconditional_prior:
@@ -193,7 +194,8 @@ class VESDE(SDE):
         return 1
 
     def sde(self, x, t, *args, **kwargs):
-        sigma = torch.sqrt(t)
+        # sigma = torch.sqrt(t)
+        sigma = self.sigma_min * (self.sigma_max / self.sigma_min) ** t # TMP : I have not harmonized with std properly yet
         diffusion = sigma * np.sqrt(2 * self.logsig)
         return .0, diffusion
 
@@ -203,7 +205,8 @@ class VESDE(SDE):
     def _std(self, t, *args, **kwargs):
         # This is a full solution to the ODE for P(t) in our derivations, after choosing g(s) as in self.sde()
         # COnfirmed by Karras et al. eq. 199
-        return self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1)
+        # return self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1)
+        return self.sigma_min*torch.sqrt(torch.exp(2 * self.logsig * t) - 1)  # TMP : I have not harmonized with std properly yet
 
     def marginal_prob(self, x0, t, *args, **kwargs):
         return self._mean(x0, t), self._std(t)

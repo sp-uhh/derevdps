@@ -10,9 +10,10 @@ N=50
 alpha="1.0"
 beta="0.1"
 scheduler="ve-song"
+# scheduler="linear"
 # zeta=50 ### Attention: since we added the dt multiplicator in the posterior now to make it more clean, we need to multiply our dewfault zeta values by N=50
-zeta=2500
-# zeta=1
+# zeta=2500
+zeta=60 ### Compounded effects of dt multiplication and normguide
 r=0.4
 
 pre="song"
