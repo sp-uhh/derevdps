@@ -13,7 +13,7 @@ import numpy as np
 import torchaudio
 
 from sgmse import sampling
-from sgmse.sdes import SDERegistry, VESDE, EDMSDE
+from sgmse.sdes import SDERegistry, VESDE, EDM
 from sgmse.backbones import BackboneRegistry
 from sgmse.util.inference import evaluate_model
 from sgmse.util.graphics import visualize_example, visualize_one, plot_loss_by_sigma
@@ -58,6 +58,7 @@ class ScoreModel(pl.LightningModule):
         self.dnn = dnn_cls(**kwargs)
         # Initialize SDE
         sde_cls = SDERegistry.get_by_name(sde)
+        print(kwargs)
         self.sde = sde_cls(**kwargs)
         # Store hyperparams and save them
         self.preconditioning = preconditioning
@@ -82,14 +83,8 @@ class ScoreModel(pl.LightningModule):
 
         self.nolog = nolog
         # Just for logging loss versus sigma
-        t_bins = np.linspace(0, self.sde.T, steps=20)
-        if isinstance(self.sde, VESDE):
-            scheduler = VESongScheduler(**self.sde.__dict__())
-        if isinstance(self.sde, EDMSDE):
-            scheduler = EDMScheduler(**self.sde.__dict__())
-        else:
-            print(f"Scheduler for this SDE {type(self.sde).__name__} not supported")
-        sigma_bins = scheduler.continuous_step(t_bins)
+        t_bins = np.linspace(0, self.sde.T, 20)
+        sigma_bins = self.sde.scheduler.continuous_step(t_bins)
         self.loss_logger_diff = SigmaLossLogger(sigma_bins)
 
     @staticmethod
@@ -346,7 +341,6 @@ class ScoreModel(pl.LightningModule):
         corrector_name, r, corrector_steps,
         **kwargs):
 
-        N = self.sde.N if N is None else N
         sde = self.sde.copy()
         sde.N = N
         if self.data_module.return_time:
@@ -369,7 +363,6 @@ class ScoreModel(pl.LightningModule):
         noise_std, smin, smax, churn,
         **kwargs):
 
-        N = self.sde.N if N is None else N
         sde = self.sde.copy()
         sde.N = N
         if self.data_module.return_time:

@@ -4,16 +4,12 @@ Abstract SDE classes, Reverse SDE, and VE/VP SDEs.
 Taken and adapted from https://github.com/yang-song/score_sde_pytorch/blob/1618ddea340f3e4a2ed7852a0694a809775cf8d0/sde_lib.py
 """
 import abc
-from email.policy import default
-import warnings
-
 import numpy as np
-from sgmse.util.tensors import batch_broadcast
 import torch
 
+from sgmse.util.tensors import batch_broadcast
 from sgmse.util.registry import Registry
-import os
-from sampling.schedulers import SchedulerRegistry
+from sgmse.sampling.schedulers import SchedulerRegistry
 
 SDERegistry = Registry("SDE")
 
@@ -21,7 +17,7 @@ SDERegistry = Registry("SDE")
 class SDE(abc.ABC):
     """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, N):
+    def __init__(self, N=50):
         """Construct an SDE.
 
         Args:
@@ -47,7 +43,7 @@ class SDE(abc.ABC):
 
     def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
         if shape != y.shape:
-            warnings.warn(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
+            print(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
         starting_time_step = self.scheduler.continuous_step(self.T)
         std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
@@ -77,24 +73,24 @@ class SDE(abc.ABC):
         """
         pass
 
-    def discretize(self, x, t, *args):
-        """Discretize the SDE in the form: x_{i+1} = x_i + f_i(x_i) + G_i z_i.
+    # def discretize(self, x, t, *args):
+    #     """Discretize the SDE in the form: x_{i+1} = x_i + f_i(x_i) + G_i z_i.
 
-        Useful for reverse diffusion sampling and probabiliy flow sampling.
-        Defaults to Euler-Maruyama discretization.
+    #     Useful for reverse diffusion sampling and probabiliy flow sampling.
+    #     Defaults to Euler-Maruyama discretization.
 
-        Args:
-            x: a torch tensor
-            t: a torch float representing the time step (from 0 to `self.T`)
+    #     Args:
+    #         x: a torch tensor
+    #         t: a torch float representing the time step (from 0 to `self.T`)
 
-        Returns:
-            f, G
-        """
-        dt = 1 / self.N
-        drift, diffusion = self.sde(x, t, *args)
-        f = drift * dt
-        G = diffusion * torch.sqrt(torch.tensor(dt, device=t.device))
-        return f, G
+    #     Returns:
+    #         f, G
+    #     """
+    #     dt = 1 / self.N
+    #     drift, diffusion = self.sde(x, t, *args)
+    #     f = drift * dt
+    #     G = diffusion * torch.sqrt(torch.tensor(dt, device=t.device))
+    #     return f, G
 
     def reverse(oself, score_model, probability_flow=False, diffusion_power_gradient=None):
         """Create the reverse-time SDE/ODE.
@@ -108,7 +104,7 @@ class SDE(abc.ABC):
         N = oself.N
         T = oself.T
         sde_fn = oself.sde
-        discretize_fn = oself.discretize
+        # discretize_fn = oself.discretize
         std_fn = oself._std
 
         # Build the class for reverse-time SDE.
@@ -143,15 +139,15 @@ class SDE(abc.ABC):
                     'sde_diffusion': sde_diffusion, 'score_drift': score_drift, 'score': score
                 }
 
-            def discretize(self, x, t, conditioning, sde_input, **kwargs):
-                """Create discretized iteration rules for the reverse diffusion sampler."""
-                f, G = discretize_fn(x, t, sde_input)
-                if G.ndim < x.ndim:
-                    G = G.view(*G.size(), *((1,)*(x.ndim - G.ndim)))
-                score = score_model(x, t, score_conditioning=conditioning)
-                rev_f = f - G**2 * score * (0.5 if self.probability_flow else 1.)
-                rev_G = torch.zeros_like(G) if self.probability_flow else G
-                return rev_f, rev_G, score
+            # def discretize(self, x, t, conditioning, sde_input, **kwargs):
+            #     """Create discretized iteration rules for the reverse diffusion sampler."""
+            #     f, G = discretize_fn(x, t, sde_input)
+            #     if G.ndim < x.ndim:
+            #         G = G.view(*G.size(), *((1,)*(x.ndim - G.ndim)))
+            #     score = score_model(x, t, score_conditioning=conditioning)
+            #     rev_f = f - G**2 * score * (0.5 if self.probability_flow else 1.)
+            #     rev_G = torch.zeros_like(G) if self.probability_flow else G
+            #     return rev_f, rev_G, score
 
         return RSDE()
 
@@ -162,7 +158,7 @@ class SDE(abc.ABC):
 
 @SDERegistry.register("ve")
 class VESDE(SDE):
-    def __init__(self, sigma_min, sigma_max, N, scheduler='ve-song', **kwargs):
+    def __init__(self, sigma_min, sigma_max, N=50, scheduler='ve-song', **kwargs):
         """Construct a Variance Exploding SDE.
 
         dx = sigma(t) dw
@@ -182,6 +178,7 @@ class VESDE(SDE):
         self.logsig = np.log(self.sigma_max / self.sigma_min)
         self.N = N
         self.scheduler = SchedulerRegistry.get_by_name(scheduler)(
+            N=N,
             sigma_min=sigma_min,
             sigma_max=sigma_max,
             eps=0.,
@@ -237,7 +234,7 @@ class VESDE(SDE):
 
 @SDERegistry.register("edm")
 class EDM(SDE):
-    def __init__(self, sigma_min, sigma_max, rho, N=100, scheduler='edm', **kwargs):
+    def __init__(self, sigma_min, sigma_max, rho, N=50, scheduler='edm', **kwargs):
         """Construct a Variance Exploding SDE.
 
         dx = sqrt( 2 sigma(t) ) dw
@@ -253,6 +250,7 @@ class EDM(SDE):
         self.sigma_max = sigma_max
         self.rho = rho
         self.scheduler = SchedulerRegistry.get_by_name(scheduler)(
+            N=N,
             sigma_min=sigma_min,
             sigma_max=sigma_max,
             eps=0.,

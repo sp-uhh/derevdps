@@ -10,7 +10,7 @@ from .predictors import Predictor, PredictorRegistry
 from .correctors import Corrector, CorrectorRegistry
 from .posteriors import Posterior, PosteriorRegistry
 from .operators import LinearOperator, OperatorRegistry
-from .schedulers import Scheduler, SchedulerRegistry, LinearScheduler, KarrasScheduler
+from .schedulers import Scheduler, SchedulerRegistry
 
 __all__ = [
     'PredictorRegistry', 'CorrectorRegistry', 'PosteriorRegistry', 'OperatorRegistry', 'SchedulerRegistry'
@@ -98,7 +98,9 @@ def get_song_sampler(
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        timesteps = scheduler.timesteps().to(xt.device)
+        # timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
+        timesteps = torch.cat([ torch.linspace(sde.T, -1/scheduler.N, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
+        print(sde.T, timesteps)
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
@@ -167,7 +169,7 @@ def get_karras_sampler(
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        timesteps = scheduler.timesteps().to(xt.device)
+        timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:

@@ -19,7 +19,7 @@ class Scheduler(abc.ABC):
     def reverse_timesteps(self, T):
         lin_timesteps = torch.linspace(T, -1/self.N, self.N)
         timesteps = self.continuous_step(lin_timesteps)
-        return timesteps
+        return torch.cat([timesteps, torch.Tensor([0.])])
 
     @abc.abstractmethod
     def continuous_step(self, a):
