@@ -233,16 +233,17 @@ class ScoreModel(pl.LightningModule):
     def forward(self, x, t, score_conditioning, **kwargs):
         dnn_input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
         dnn_input = self.preconditioning_input(dnn_input, t)
-        print("dnn input", dnn_input.abs().mean())
+        print("dnn input", dnn_input.abs().mean(), dnn_input.std())
         noise_input = self.preconditioning_noise(t)
-        print("noise input", noise_input.abs().mean(), noise_input.std())
+        print("noise input", noise_input.abs().mean())
         dnn_output = self.dnn(dnn_input, noise_input)
-        print("dnn output", dnn_output.abs().mean())
+        print("dnn output", dnn_output.abs().mean(), dnn_output.std())
         output = self.preconditioning_output(dnn_output, t)
-        print("preconditioned output",output.abs().mean())
+        print("preconditioned output",output.abs().mean(), output.std())
         skip = self.preconditioning_skip(x, t)
-
+        print("preconditioned skip", skip.abs().mean())
         tweedie_denoiser = skip + output
+        print("tweedie denoiser", tweedie_denoiser.abs().mean(), tweedie_denoiser.std())
 
         return tweedie_denoiser
 
