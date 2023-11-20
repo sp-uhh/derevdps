@@ -88,7 +88,7 @@ def get_song_sampler(
     scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
     posterior_cls = PosteriorRegistry.get_by_name(posterior_name)
     predictor = predictor_cls(sde, score_fn, probability_flow=probability_flow)
-    corrector = corrector_cls(sde, score_fn, r=r, n_steps=corrector_steps)
+    corrector = corrector_cls(sde, score_fn, probability_flow=probability_flow, r=r, n_steps=corrector_steps)
     posterior = posterior_cls(sde, operator, linearization, zeta=zeta)
     scheduler = scheduler_cls(eps=eps, **sde.__dict__, **kwargs)
     

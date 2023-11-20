@@ -11,9 +11,9 @@ CorrectorRegistry = Registry("Corrector")
 class Corrector(abc.ABC):
     """The abstract class for a corrector algorithm."""
 
-    def __init__(self, sde, score_fn, r, n_steps):
+    def __init__(self, sde, score_fn, probability_flow, r, n_steps):
         super().__init__()
-        self.rsde = sde.reverse(score_fn)
+        self.rsde = sde.reverse(score_fn, probability_flow=probability_flow)
         self.score_fn = score_fn
         self.r = r
         self.n_steps = n_steps
@@ -38,8 +38,8 @@ class Corrector(abc.ABC):
 @CorrectorRegistry.register(name='ald')
 class AnnealedLangevinDynamics(Corrector):
     """The original annealed Langevin dynamics predictor in NCSN/NCSNv2."""
-    def __init__(self, sde, score_fn, r, n_steps):
-        super().__init__(sde, score_fn, r, n_steps)
+    def __init__(self, sde, score_fn, probability_flow, r, n_steps):
+        super().__init__(sde, score_fn, probability_flow, r, n_steps)
         self.sde = sde
         self.score_fn = score_fn
         self.r = r
