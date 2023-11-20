@@ -27,7 +27,7 @@ def get_window(window_type, window_length):
 
 class Specs(Dataset):
 	def __init__(
-		self, data_dir, subset, dummy, shuffle_spec, num_frames, format,
+		self, data_dir, subset, dummy, shuffle_spec, num_frames, format, sample_rate,
 		normalize_audio=True, spec_transform=None, stft_kwargs=None, spatial_channels=1, 
 		return_time=False,
 		**ignored_kwargs
@@ -35,6 +35,7 @@ class Specs(Dataset):
 		self.data_dir = data_dir
 		self.subset = subset
 		self.format = format
+		self.sample_rate = sample_rate
 		self.spatial_channels = spatial_channels
 		self.return_time = return_time
 
@@ -83,9 +84,10 @@ class Specs(Dataset):
 		x, sr = load(self.clean_files[i])			
 		y, _ = load(self.noisy_files[i])
 
-		if sr != 16000: #Resample
-			x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)(x)
-			y = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)(y)
+		if sr != self.sample_rate: #Resample
+			print(f"Resampling the data ({sr}) to the expected sampling rate ({self.sample_rate}), probably something wrong is happening")
+			x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)(x)
+			y = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)(y)
 
 		min_len = min(x.size(-1), y.size(-1))
 		x, y = x[..., : min_len], y[..., : min_len] 
@@ -150,7 +152,7 @@ class Specs(Dataset):
 
 class SpecsDataModule(pl.LightningDataModule):
 	def __init__(
-		self, base_dir="", format="wsj0", spatial_channels=1, batch_size=8,
+		self, base_dir="", format="wsj0", sample_rate=16000, spatial_channels=1, batch_size=8,
 		n_fft=510, hop_length=128, num_frames=256, window="hann",
 		num_workers=8, dummy=False, spec_factor=0.1, spec_abs_exponent=1.0,
 		gpu=True, return_time=False, **kwargs
@@ -158,6 +160,7 @@ class SpecsDataModule(pl.LightningDataModule):
 		super().__init__()
 		self.base_dir = base_dir
 		self.format = format
+		self.sample_rate = sample_rate
 		self.spatial_channels = spatial_channels
 		self.batch_size = batch_size
 		self.n_fft = n_fft
@@ -180,14 +183,14 @@ class SpecsDataModule(pl.LightningDataModule):
 		)
 		if stage == 'fit' or stage is None:
 			self.train_set = Specs(self.base_dir, 'train', self.dummy, True, 
-				format=self.format, spatial_channels=self.spatial_channels, 
+				format=self.format, sample_rate=self.sample_rate, spatial_channels=self.spatial_channels, 
 				return_time=self.return_time, **specs_kwargs)
 			self.valid_set = Specs(self.base_dir, 'valid', self.dummy, False, 
-				format=self.format, spatial_channels=self.spatial_channels, 
+				format=self.format, sample_rate=self.sample_rate,spatial_channels=self.spatial_channels, 
 				return_time=self.return_time, **specs_kwargs)
 		if stage == 'test' or stage is None:
 			self.test_set = Specs(self.base_dir, 'test', self.dummy, False, 
-				format=self.format, spatial_channels=self.spatial_channels, 
+				format=self.format, sample_rate=self.sample_rate,spatial_channels=self.spatial_channels, 
 				return_time=self.return_time, **specs_kwargs)
 
 	def spec_fwd(self, spec):
@@ -238,10 +241,11 @@ class SpecsDataModule(pl.LightningDataModule):
 
 	@staticmethod
 	def add_argparse_args(parser):
-		parser.add_argument("--format", type=str, default="wsj0", choices=["dns", "lj", "reverb", "rir", "timit", "vctk", "voicebank", "wsj0"], help="File paths follow the DNS data description.")
 		parser.add_argument("--base_dir", type=str, default="/data/lemercier/databases/wsj0+chime_julian/audio",
 			help="The base directory of the dataset. Should contain `train`, `valid` and `test` subdirectories, "
 				"each of which contain `clean` and `noisy` subdirectories.")
+		parser.add_argument("--format", type=str, default="wsj0", choices=["dns", "lj", "reverb", "rir", "timit", "vctk", "voicebank", "wsj0"], help="File paths follow the DNS data description.")
+		parser.add_argument("--sample_rate", type=int, default=16000, help="Expected sampling rate of the dataset.")
 		parser.add_argument("--batch_size", type=int, default=8, help="The batch size. 32 by default.")
 		parser.add_argument("--n_fft", type=int, default=510, help="Number of FFT bins. 510 by default.")   # to assure 256 freq bins
 		parser.add_argument("--hop_length", type=int, default=128, help="Window hop length. 128 by default.")

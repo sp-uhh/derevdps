@@ -81,8 +81,9 @@ if __name__ == '__main__':
 		callbacks.append(ModelCheckpoint(dirpath=os.path.join(logger.log_dir, "checkpoints"), 
 			save_top_k=1, monitor="ValidationPESQ", mode="max", filename='{epoch}-{pesq:.2f}'))
 
-	additional_kwargs = {"gradient_clip_val": 75., "gradient_clip_algorithm": "value"} if args.grad_clip else {}
-
+	# additional_kwargs = {"gradient_clip_val": 75., "gradient_clip_algorithm": "value"} if args.grad_clip else {}
+	additional_kwargs = {}
+	
 	# Initialize the Trainer and the DataModule
 	trainer = pl.Trainer.from_argparse_args(
 		arg_groups['pl.Trainer'],

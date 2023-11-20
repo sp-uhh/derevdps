@@ -28,7 +28,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=1e8):
+def pick_zeta_schedule(schedule, t, zeta, clip=1e8):
     if schedule == "none":
         return None
     if schedule == "const":
@@ -46,9 +46,9 @@ def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=1e8):
     if schedule == "log-increase":
         zeta_t = zeta * np.log(1+1e10+t)
     if schedule == "div-sig":
-        zeta_t = zeta / sigma_t
+        zeta_t = zeta / t
     if schedule == "div-sig-square":
-        zeta_t = zeta / sigma_t**2
+        zeta_t = zeta / t**2
     if schedule == "saw-tooth-increase":
         max_step = .9
         if t < max_step: #ramp from 0 to zeta0 in rho_max
@@ -105,14 +105,15 @@ def get_song_sampler(
             dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
             t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
             if posterior_name != "none":
-                posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
+                # posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
+                posterior.zeta = pick_zeta_schedule(zeta_schedule, min(1., t.cpu().item() / scheduler.continuous_step(sde.T)), zeta0) #weird fix for now
 
             # corrector
             with torch.no_grad():
                 xt, xt_mean = corrector.update_fn(xt, t, dt, conditioning=conditioning, sde_input=sde_input)
 
             # predictor
-            grad_required = posterior_name == "dps" or (posterior_name == "switching" and timesteps[i].item() > kwargs["sw"]) or (posterior_name == "reverse-switching" and timesteps[i].item() < kwargs["sw"])
+            grad_required = posterior.grad_required(t)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 xt, xt_mean, score = predictor.update_fn(xt, t, dt, conditioning=conditioning, sde_input=sde_input)

@@ -57,13 +57,18 @@ class NoPosteriorSampling(Posterior):
 class PosteriorSampling(Posterior):
     
     def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+        # print("before", x.requires_grad)
         x_0_hat = self.tweedie_from_score(score, x, t, sde_input)
+        # print("after", x_0_hat.requires_grad)
         measurement_linear, x_0_hat_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_0_hat.squeeze(0)).unsqueeze(0)
-        self.operator.load_weights(A)
+        self.operator.load_weights(A.squeeze(0))
 
-        measurement_estimated = self.operator.forward(x_0_hat_linear.squeeze(0)).unsqueeze(0)
+        # measurement_estimated = self.operator.forward(x_0_hat_linear.squeeze(0)).unsqueeze(0) #TMP
+        measurement_estimated = self.operator.forward(x_0_hat_linear)
+
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
+
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
         normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
         

@@ -11,7 +11,7 @@ class SigmaLossLogger():
         self.mean = []
         self.var = []
 
-    def write_loss(self,t, loss_mean, loss_var):
+    def write_loss(self, t, loss_mean, loss_var):
         self.t.append(t)
         self.mean.append(loss_mean)
         self.var.append(loss_var)
@@ -24,7 +24,7 @@ class SigmaLossLogger():
     def log_t_bins(self):
         t = np.array(self.t)
         mu = np.array(self.mean)
-        var = np.array(self.var)
+        # var = np.array(self.var)
         
         log_loss=[]
         for i in range(1,len(self.t_bins)):
@@ -33,8 +33,8 @@ class SigmaLossLogger():
             else:
                 mask = (t <= self.t_bins[i]) & (t > self.t_bins[i-1])
 
-            mu_i = mu[mask].mean()
-            var_i = mu[mask].std()
+            mu_i = mu[mask].mean() if len(mu[mask]) else .0
+            var_i = mu[mask].std() if len(mu[mask]) else .0
             #var_i=var[mask].mean()
             
             log_loss.append([(self.t_bins[i]+self.t_bins[i-1])/2, mu_i, var_i])
