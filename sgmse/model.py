@@ -184,7 +184,11 @@ class ScoreModel(pl.LightningModule):
 
     def preconditioning_output(self, dnn_output, t):
         if self.preconditioning == "song":
-            sigma = self.sde._std(t).squeeze()
+            t_sde = self.sde.sigma_min**2 * (self.sde.sigma_max / self.sde.sigma_min)**(2*t) #TMP
+            sigma = self.sde._std(t_sde).squeeze()
+            print("sigma", sigma)
+
+            # sigma = self.sde._std(t).squeeze()
             scale = sigma
         if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
@@ -229,9 +233,13 @@ class ScoreModel(pl.LightningModule):
     def forward(self, x, t, score_conditioning, **kwargs):
         dnn_input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
         dnn_input = self.preconditioning_input(dnn_input, t)
+        print("dnn input", dnn_input.abs().mean())
         noise_input = self.preconditioning_noise(t)
+        print("noise input", noise_input.abs().mean(), noise_input.std())
         dnn_output = self.dnn(dnn_input, noise_input)
+        print("dnn output", dnn_output.abs().mean())
         output = self.preconditioning_output(dnn_output, t)
+        print("preconditioned output",output.abs().mean())
         skip = self.preconditioning_skip(x, t)
 
         tweedie_denoiser = skip + output
