@@ -54,11 +54,18 @@ def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
 base_parser = ArgumentParser(add_help=False)
 parser = ArgumentParser()
 for parser_ in (base_parser, parser):
-    parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
+    # parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
+    # parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
+    # parser_.add_argument("--ckpt", type=str, help="Which pretrained checkpoint to use", required=True) 
+    # parser_.add_argument("--rir_dir", type=str, required=True, help="Directory containing your RIRs.")
 
-    parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
-    parser_.add_argument("--ckpt", required=True)
+    parser_.add_argument("--test_dir", type=str, help="Directory containing your corrupted files to enhance.", default="/data3/lemercier/databases/wsj0_derev_with_rir/audio/tt/noisy")
+    parser_.add_argument("--enhanced_dir", type=str, help="Where to write your cleaned files.", default="./results")
+    parser_.add_argument("--ckpt", type=str, help="Which pretrained checkpoint to use", default="/export/home/lemercier/code/score_derev/.logs/waspaa2023/mode=score-only_sde=VESDE_backbone=ncsnpp_data=reverb_ch=1/version_11_alpha=1.0_beta=0.1_sigma=0.5_pre=song/checkpoints/epoch=204.ckpt")
+    parser_.add_argument("--rir_dir", type=str, default="/data3/lemercier/databases/wsj0_derev_with_rir/rir/tt", help="Directory containing your RIRs.")
+    
     parser_.add_argument("--n", type=int, default=-1, help="Number of cropped files")
+    parser_.add_argument("--gpu", type=int, default=0, help="Which GPU to perform inference on")
 
     parser_.add_argument("--sampler_type", type=str, default="song", choices=["song", "karras"])
     parser_.add_argument("--no_probability_flow", action="store_true", help="Use SDE sampling instead of ODE probability flow sampling.")
@@ -79,13 +86,6 @@ for parser_ in (base_parser, parser):
     
     parser_.add_argument("--measurement_noise", type=float, default=None, help="Additive Gaussian measurement noise. Given as a SNR in dB.")
 
-    parser_.add_argument("--kernel_kwargs", type=dict, default={
-        "class": "RealRIRKernel",
-        "rir_path": "/data/lemercier/databases/wsj0_derev_with_rir/rir/tt",
-        "stft": False,
-        "size": 16000
-    })
-
 args = parser.parse_args()
 
 os.makedirs(args.enhanced_dir, exist_ok=True)
@@ -101,7 +101,7 @@ model = model_cls.load_from_checkpoint(
     gpu=False
 )
 model.eval(no_ema=False)
-
+torch.cuda.set_device(f'cuda:{args.gpu}')
 model.cuda()
 
 files = sorted(glob.glob(os.path.join(args.test_dir, "*.wav")))
@@ -109,12 +109,19 @@ files = files[: args.n] if args.n > 0 else files
 
 for i, f in tqdm.tqdm(enumerate(files), total=len(files)):
 
+
+    kernel_kwargs = {
+        "class": "RealRIRKernel",
+        "rir_path": args.rir_dir,
+        "stft": False,
+        "size": 16000
+    }
     y, A, zeta, operator, zeta_schedule = get_posterior_sampling_args(
         model,
         file=f, 
         i=i,
         args=args,
-        kernel_kwargs=args.kernel_kwargs)
+        kernel_kwargs=kernel_kwargs)
 
     other_kwargs = dict(path=args.enhanced_dir, unconditional_prior=True)
 

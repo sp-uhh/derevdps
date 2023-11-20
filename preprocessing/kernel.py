@@ -2,7 +2,10 @@
 import os
 from os.path import join
 import numpy as np
-import pyroomacoustics as pra
+try:
+    import pyroomacoustics as pra
+except ImportError:
+    print("Did not import pytoomacoustics but used only for preprocessing, not for inference")
 from abc import ABC, abstractmethod
 import torch, torchaudio
 from glob import glob
