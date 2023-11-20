@@ -45,7 +45,6 @@ class SDE(abc.ABC):
         if shape != y.shape:
             print(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
         starting_time_step = self.scheduler.continuous_step(self.T) 
-        # starting_time_step = self.T # TMP : have not fixed scheduler yet
         std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
         print("prior std", std)
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
@@ -128,11 +127,16 @@ class SDE(abc.ABC):
                 return total_drift, diffusion, score
 
             def rsde_parts(self, x, t, conditioning, sde_input, **kwargs):
-                sde_drift, sde_diffusion = sde_fn(x, t, sde_input)
+
+                t_sde = oself.sigma_min**2 * (oself.sigma_max / oself.sigma_min)**(2*t)
+                sde_drift, sde_diffusion = sde_fn(x, t_sde, sde_input)
+
+                # sde_drift, sde_diffusion = sde_fn(x, t, sde_input)
                 score = score_model(x, t, score_conditioning=conditioning)
                 if sde_diffusion.ndim < x.ndim:
                     sde_diffusion = sde_diffusion.view(*sde_diffusion.size(), *((1,)*(x.ndim - sde_diffusion.ndim)))
 
+                print("x", x.abs().mean())
                 print("t", t)
                 print("g", sde_diffusion)
 

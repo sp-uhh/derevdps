@@ -98,14 +98,15 @@ def get_song_sampler(
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
+        # timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
         # timesteps = torch.cat([ torch.linspace(sde.T, 1e-6, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
+        timesteps = torch.cat([ torch.linspace(sde.T, 3e-2, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
         print(sde.T, timesteps)
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
-            # dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
-            dt = torch.Tensor([-0.0198]).to(xt.device)
+            dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
+            # dt = torch.Tensor([-0.0198]).to(xt.device)
             t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
             if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
