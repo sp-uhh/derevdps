@@ -58,7 +58,6 @@ class ScoreModel(pl.LightningModule):
         self.dnn = dnn_cls(**kwargs)
         # Initialize SDE
         sde_cls = SDERegistry.get_by_name(sde)
-        print(kwargs)
         self.sde = sde_cls(**kwargs)
         # Store hyperparams and save them
         self.preconditioning = preconditioning

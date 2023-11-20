@@ -22,7 +22,8 @@ sde="ve"
 zeta_schedule="saw-tooth-increase"
 sampler_type="song"
 predictor="euler-maruyama"
-corrector="ald"
+# corrector="ald"
+corrector="none"
 posterior="dps"
 
 # ckpt_score=".logs/waspaa2023/score-only_unconditional_sde=${sde}_pre=${pre}_alpha=${alpha}_beta=${beta}_sigma=0.5_epoch=204.ckpt"
@@ -35,5 +36,6 @@ python3 enhancement.py \
     --corrector $corrector --r $r \
     --posterior $posterior --operator reverberation --zeta $zeta --zeta_schedule $zeta_schedule \
     --ckpt $ckpt_score \
-    --enhanced_dir ./results
+    --enhanced_dir ./results \
+    # --no_probability_flow
     # --enhanced_dir .exp/.posterior/prior=0_${sampler_type}_sde=${sde}_pre=${pre}_alpha=${alpha}_beta=${beta}_N=${N}_pred=${predictor}_corr=${corrector}_r=${r}_sched=${scheduler}_post=${posterior}_zeta=${zeta}_zsched=${zeta_schedule}

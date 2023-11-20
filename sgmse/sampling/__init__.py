@@ -102,7 +102,6 @@ def get_song_sampler(
         # timesteps = torch.cat([ torch.linspace(sde.T, 1e-6, scheduler.N), torch.Tensor([0.]) ]).to(xt.device)
         print(sde.T, timesteps)
         pbar = tqdm.tqdm(list(range(sde.N)))
-        print(timesteps)
 
         for i in pbar:
             # dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)

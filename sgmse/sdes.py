@@ -47,6 +47,7 @@ class SDE(abc.ABC):
         starting_time_step = self.scheduler.continuous_step(self.T) 
         # starting_time_step = self.T # TMP : have not fixed scheduler yet
         std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
+        print("prior std", std)
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
         if unconditional_prior:
             return torch.randn_like(y) * std
@@ -131,12 +132,12 @@ class SDE(abc.ABC):
                 score = score_model(x, t, score_conditioning=conditioning)
                 if sde_diffusion.ndim < x.ndim:
                     sde_diffusion = sde_diffusion.view(*sde_diffusion.size(), *((1,)*(x.ndim - sde_diffusion.ndim)))
-                
-                # score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.) #Correct one
-                # diffusion = torch.zeros_like(sde_diffusion) if self.probability_flow else sde_diffusion
 
-                score_drift = sde_diffusion**2 * score * 0.5 #Why did I use that? That is highly incorrect #TMP
-                diffusion = torch.zeros_like(sde_diffusion)
+                print("t", t)
+                print("g", sde_diffusion)
+
+                score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.) #Correct one
+                diffusion = torch.zeros_like(sde_diffusion) if self.probability_flow else sde_diffusion
 
                 total_drift = sde_drift - score_drift
                 return {
