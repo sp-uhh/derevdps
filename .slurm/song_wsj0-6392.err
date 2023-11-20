@@ -1,0 +1,67 @@
+/var/spool/slurm/d/job06392/slurm_script: line 16: .environment/bin/activate: No such file or directory
+/export/home/lemercier/.local/lib/python3.8/site-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.16.5 and <1.23.0 is required for this version of SciPy (detected version 1.24.1
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+Missing logger folder: ./.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1
+/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/connectors/accelerator_connector.py:441: LightningDeprecationWarning: Setting `Trainer(gpus=1)` is deprecated in v1.7 and will be removed in v2.0. Please use `Trainer(accelerator='gpu', devices=1)` instead.
+  rank_zero_deprecation(
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/1
+----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 1 processes
+----------------------------------------------------------------------------------------------------
+
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+  | Name | Type   | Params
+--------------------------------
+0 | dnn  | NCSNpp | 27.7 M
+--------------------------------
+27.7 M    Trainable params
+128       Non-trainable params
+27.7 M    Total params
+110.946   Total estimated model params size (MB)
+SLURM auto-requeueing enabled. Setting signal handlers.
+Traceback (most recent call last):
+  File "train.py", line 99, in <module>
+    trainer.fit(model)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 603, in fit
+    call._call_and_handle_interrupt(
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/call.py", line 38, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 645, in _fit_impl
+    self._run(model, ckpt_path=self.ckpt_path)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 1098, in _run
+    results = self._run_stage()
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 1177, in _run_stage
+    self._run_train()
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 1200, in _run_train
+    self.fit_loop.run()
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/loops/loop.py", line 194, in run
+    self.on_run_start(*args, **kwargs)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/loops/fit_loop.py", line 206, in on_run_start
+    self.trainer.reset_train_dataloader(self.trainer.lightning_module)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 1515, in reset_train_dataloader
+    self.train_dataloader = self._data_connector._request_dataloader(RunningStage.TRAINING)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 446, in _request_dataloader
+    dataloader = source.dataloader()
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 520, in dataloader
+    return self.instance.trainer._call_lightning_module_hook(self.name, pl_module=self.instance)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py", line 1342, in _call_lightning_module_hook
+    output = fn(*args, **kwargs)
+  File "/data1/lemercier/code/_public_repos/derevdps/sgmse/model.py", line 425, in train_dataloader
+    return self.data_module.train_dataloader()
+  File "/data1/lemercier/code/_public_repos/derevdps/sgmse/data_module.py", line 266, in train_dataloader
+    return DataLoader(
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/lightning_lite/utilities/data.py", line 323, in wrapper
+    init(obj, *args, **kwargs)
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/torch/utils/data/dataloader.py", line 344, in __init__
+    sampler = RandomSampler(dataset, generator=generator)  # type: ignore[arg-type]
+  File "/export/home/lemercier/.local/lib/python3.8/site-packages/torch/utils/data/sampler.py", line 107, in __init__
+    raise ValueError("num_samples should be a positive integer "
+ValueError: num_samples should be a positive integer value, but got num_samples=0
+srun: error: spgpu2: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=6392.0

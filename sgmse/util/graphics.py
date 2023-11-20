@@ -5,8 +5,8 @@ import numpy as np
 import os
 import soundfile as sf
 import glob
-import plotly.express as px
-import pandas as pd
+# import plotly.express as px
+# import pandas as pd
 
 # Plotting settings
 EPS_graphics = 1e-10
