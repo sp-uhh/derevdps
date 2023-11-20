@@ -186,7 +186,7 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "song":
             t_sde = self.sde.sigma_min**2 * (self.sde.sigma_max / self.sde.sigma_min)**(2*t) #TMP
             sigma = self.sde._std(t_sde).squeeze()
-            print("sigma", sigma)
+            # print("sigma", sigma)
 
             # sigma = self.sde._std(t).squeeze()
             scale = sigma
@@ -233,17 +233,17 @@ class ScoreModel(pl.LightningModule):
     def forward(self, x, t, score_conditioning, **kwargs):
         dnn_input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
         dnn_input = self.preconditioning_input(dnn_input, t)
-        print("dnn input", dnn_input.abs().mean(), dnn_input.std(), torch.linalg.norm(dnn_input))
+        # print("dnn input", dnn_input.abs().mean(), dnn_input.std(), torch.linalg.norm(dnn_input))
         noise_input = self.preconditioning_noise(t)
-        print("noise input", noise_input.abs().mean())
+        # print("noise input", noise_input.abs().mean())
         dnn_output = self.dnn(dnn_input, noise_input)
-        print("dnn output", dnn_output.abs().mean(), dnn_output.std(), torch.linalg.norm(dnn_output))
+        # print("dnn output", dnn_output.abs().mean(), dnn_output.std(), torch.linalg.norm(dnn_output))
         output = self.preconditioning_output(dnn_output, t)
-        print("preconditioned output",output.abs().mean(), output.std(), torch.linalg.norm(output))
+        # print("preconditioned output",output.abs().mean(), output.std(), torch.linalg.norm(output))
         skip = self.preconditioning_skip(x, t)
-        print("preconditioned skip", skip.abs().mean())
+        # print("preconditioned skip", skip.abs().mean())
         tweedie_denoiser = skip + output
-        print("tweedie denoiser", tweedie_denoiser.abs().mean(), tweedie_denoiser.std(), torch.linalg.norm(tweedie_denoiser))
+        # print("tweedie denoiser", tweedie_denoiser.abs().mean(), tweedie_denoiser.std(), torch.linalg.norm(tweedie_denoiser))
         return tweedie_denoiser
 
     def _step(self, batch, batch_idx):
