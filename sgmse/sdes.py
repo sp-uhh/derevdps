@@ -93,7 +93,7 @@ class SDE(abc.ABC):
     #     G = diffusion * torch.sqrt(torch.tensor(dt, device=t.device))
     #     return f, G
 
-    def reverse(oself, score_model, probability_flow=False, diffusion_power_gradient=None):
+    def reverse(oself, score_model, probability_flow, diffusion_power_gradient=None):
         """Create the reverse-time SDE/ODE.
 
         Args:

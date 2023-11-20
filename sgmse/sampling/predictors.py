@@ -12,10 +12,10 @@ PredictorRegistry = Registry("Predictor")
 class Predictor(abc.ABC):
     """The abstract class for a predictor algorithm."""
 
-    def __init__(self, sde, score_fn, probability_flow=False):
+    def __init__(self, sde, score_fn, probability_flow):
         super().__init__()
         self.sde = sde
-        self.rsde = sde.reverse(score_fn)
+        self.rsde = sde.reverse(score_fn, probability_flow=probability_flow)
         self.score_fn = score_fn
         self.probability_flow = probability_flow
 
@@ -42,7 +42,7 @@ class EulerMaruyamaPredictor(Predictor):
     """
     1st-order method for solving SDEs, classical Euler-Maruyama scheme
     """
-    def __init__(self, sde, score_fn, probability_flow=False):
+    def __init__(self, sde, score_fn, probability_flow):
         super().__init__(sde, score_fn, probability_flow=probability_flow)
 
     def update_fn(self, x, t, dt, conditioning, sde_input, **kwargs):
@@ -60,7 +60,7 @@ class EulerHeunPredictor(Predictor):
     """
     2nd-order method for solving ODEs, classical trapezoidal scheme (can be seen as Euler + a 2nd-order corrector using implicit Euler)
     """
-    def __init__(self, sde, score_fn, probability_flow=False):
+    def __init__(self, sde, score_fn, probability_flow):
         super().__init__(sde, score_fn, probability_flow=probability_flow)
 
     def update_fn(self, x, t, dt, conditioning, sde_input, **kwargs):
@@ -68,7 +68,7 @@ class EulerHeunPredictor(Predictor):
         f, g, score = self.rsde.sde(x, t, conditioning, sde_input, **kwargs)
         x_mean = x + f * dt
         if self.sde._std(t + dt) > 0:
-            f_next, _, score_next = self.rsde.sde(x_mean, t+dt, conditioning, sde_input, **kwargs)
+            f_next, _, score_next = self.rsde.sde(x_mean, t+dt, conditioning, sde_input, probability_flow=self.probability_flow, **kwargs)
             x_mean = x + .5 * (f + f_next) * dt
         x = x_mean
         return x, x_mean, score
