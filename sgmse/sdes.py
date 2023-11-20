@@ -139,6 +139,7 @@ class SDE(abc.ABC):
                 print("x", x.abs().mean())
                 print("t", t)
                 print("g", sde_diffusion)
+                print("sde score", torch.linalg.norm(score))
 
                 score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.) #Correct one
                 diffusion = torch.zeros_like(sde_diffusion) if self.probability_flow else sde_diffusion
@@ -229,7 +230,10 @@ class VESDE(SDE):
         return x + sigma**2 * score
     
     def score_from_tweedie(self, tweedie, x, t, *args):
-        sigma = self._std(t)
+        t_sde = self.sigma_min**2 * (self.sigma_max / self.sigma_min)**(2*t) #TMP
+        sigma = self._std(t_sde)
+
+        # sigma = self._std(t)
         sigma = sigma.view(sigma.size(0), *(1,)*(tweedie.ndim - sigma.ndim))
         return 1 / sigma**2 * (tweedie - x)
 
