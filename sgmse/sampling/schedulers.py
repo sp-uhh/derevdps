@@ -26,7 +26,7 @@ class Scheduler(abc.ABC):
     def continuous_step(self, a):
         pass
 
-@SchedulerRegistry.register("ve-song")
+@SchedulerRegistry.register("ve")
 class VESongScheduler(Scheduler):
 
     def __init__(self, N, eps=3e-2, sigma_min=5e-2, sigma_max=5e-1, **kwargs):

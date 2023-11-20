@@ -11,15 +11,19 @@ import time
 import os
 import numpy as np
 import torchaudio
+from pesq import pesq
+from pystoi import stoi
+from glob import glob
 
 from sgmse import sampling
 from sgmse.sdes import SDERegistry, VESDE, EDM
 from sgmse.backbones import BackboneRegistry
-from sgmse.util.inference import evaluate_model
 from sgmse.util.graphics import visualize_example, visualize_one, plot_loss_by_sigma
-from sgmse.util.other import pad_spec, pad_time, si_sdr_torch
+from sgmse.util.other import pad_spec, pad_time, si_sdr
 from sgmse.util.train_utils import SigmaLossLogger
 from sgmse.sampling.schedulers import VESongScheduler, EDMScheduler
+from sgmse.sampling.operators import ReverberationOperator
+from preprocessing.ker import RealRIRKernel
 
 VIS_EPOCHS = 5
 
@@ -32,7 +36,8 @@ class ScoreModel(pl.LightningModule):
         t_eps: float = 3e-2, transform: str = 'none', nolog: bool = False,
         num_eval_files: int = 10, loss_type: str = 'mse', data_module_cls = None, 
         condition: str = "none",
-        num_samples_unconditional: int = 1,
+        num_unconditional_files: int = 5,
+        testset_dir: str = None,
         **kwargs
     ):
         """
@@ -68,7 +73,7 @@ class ScoreModel(pl.LightningModule):
         self.t_eps = t_eps
         self.loss_type = loss_type
         self.num_eval_files = num_eval_files
-        self.num_samples_unconditional = num_samples_unconditional
+        self.num_unconditional_files = num_unconditional_files
 
         self.save_hyperparameters(ignore=['nolog'])
         self.data_module = data_module_cls(**kwargs)
@@ -85,6 +90,7 @@ class ScoreModel(pl.LightningModule):
         t_bins = np.linspace(0, self.sde.T, 20)
         sigma_bins = self.sde.scheduler.continuous_step(t_bins)
         self.loss_logger_diff = SigmaLossLogger(sigma_bins)
+        self.testset_dir = testset_dir or None
 
     @staticmethod
     def add_argparse_args(parser):
@@ -99,7 +105,8 @@ class ScoreModel(pl.LightningModule):
         parser.add_argument("--sigma_data", type=float, default=1.7)
         parser.add_argument("--p_mean", type=float, default=-1.2)
         parser.add_argument("--p_std", type=float, default=1.2)
-        parser.add_argument("--num_samples_unconditional", type=int, default=4, help="Number of generated unconditional samples during evaluation.")
+        parser.add_argument("--num_unconditional_files", type=int, default=4, help="Number of generated unconditional samples during evaluation.")
+        parser.add_argument("--testset_dir", type=str, default=None, help="Get the test dir for evaluation during the validation step.")
 
         return parser
 
@@ -274,61 +281,78 @@ class ScoreModel(pl.LightningModule):
         self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/LossSigma", [figure])
         self.loss_logger_diff.reset_loss()
 
-    def validation_step(self, batch, batch_idx, discriminative=False, sr=16000):
+    def validation_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx)
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
-        if batch_idx == 0 and self.num_eval_files != 0:
-            # Inverse problem evaluation
-            self.run_evaluation(sr=sr, discriminative=discriminative)
+        if isinstance(self.sde, VESDE):
+            kwargs = dict(sampler_type="song",predictor="euler", scheduler="ve")
+        if isinstance(self.sde, EDM):
+            kwargs = dict(sampler_type="karras",predictor="euler", corrector="none", scheduler="edm", noise_std=1, smin=self.sde.sigma_min, smax=self.sde.sigma_max, churn=0)
+
+        if batch_idx == 0:
+            if hasattr(self.testset_dir) and self.testset_dir:
+                # Inverse problem evaluation
+                self.run_posterior_sampling(**kwargs)
             # Unconditional sampling
-            self.run_unconditional_sampling(batch[0]*0, num_samples_unconditional=self.num_samples_unconditional, sampler_type="karras",predictor="euler", corrector="none", scheduler="karras", noise_std=1, smin=self.sde.sigma_min, smax=self.sde.sigma_max, churn=0)
+            self.run_unconditional_sampling(**kwargs)
 
         return loss
     
-    def run_evaluation(self, sr: int = 16000, discriminative: bool = False):
-        # Evaluate speech enhancement performance
-        pesq_est, si_sdr_est, estoi_est, spec, audio = evaluate_model(self, self.num_eval_files, spec=not self.current_epoch%VIS_EPOCHS, audio=not self.current_epoch%VIS_EPOCHS, discriminative=discriminative)
-        print(f"PESQ at epoch {self.current_epoch} : {pesq_est:.2f}")
-        print(f"SISDR at epoch {self.current_epoch} : {si_sdr_est:.1f}")
-        print(f"ESTOI at epoch {self.current_epoch} : {estoi_est:.2f}")
-        print('__________________________________________________________________')
+    def run_posterior_sampling(self, _max_vis_samples=10, _vis_epochs=10, **kwargs):
+        # Evaluate posterior sampling performance
+        x_files = sorted(glob(os.path.join(self.testset_dir, "audio/clean", "*.wav")))
+        y_files = sorted(glob(os.path.join(self.testset_dir, "audio/noisy", "*.wav")))
+        rir_files = sorted(glob(os.path.join(self.testset_dir, "rir", "*.wav")))
+        x_list, y_list, x_hat_list = [], [], []
+
+        for i in range(self.num_eval_files):
+            operator = ReverberationOperator(kernel_size=int(1.*self.data_module.sample_rate), stft=False, **self.data_module.stft_kwargs)
+            kernel = RealRIRKernel()
+            A = kernel.forward(rir_path=os.path.join(self.test_dir, "rir"), i=i)
+            operator.load_weights(A)
+            y, sr = torchaudio.load(y_files[i])
+            x, sr = torchaudio.load(x_files[i])
+            if sr != self.data_module.sample_rate:
+                y = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(y)
+                x = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
+            x_hat = self.enhance(y, **kwargs)
+
+            x_list.append(x)
+            y_list.append(y)
+            x_hat_list.append(y_list)
         
-        self.log('ValidationPESQ', pesq_est, on_step=False, on_epoch=True)
-        self.log('ValidationSISDR', si_sdr_est, on_step=False, on_epoch=True)
-        self.log('ValidationESTOI', estoi_est, on_step=False, on_epoch=True)
+        x = torch.stack(x_list)
+        y = torch.stack(y_list)
+        x_hat = torch.stack(x_hat_list)
 
-        if audio is not None and self.logger is not None:
-            y_list, x_hat_list, x_list = audio
-            for idx, (y, x_hat, x) in enumerate(zip(y_list, x_hat_list, x_list)):
-                if self.current_epoch == 0:
-                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{idx}", (y / torch.max(torch.abs(y))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{idx}", (x / torch.max(x)).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{idx}", (x_hat / torch.max(torch.abs(x_hat))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
+        self.log_metrics(x, y, x_hat, _max_vis_samples=_max_vis_samples)
+        self.log_audio(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
+        self.log_spec(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
 
-        if spec is not None and self.logger is not None:
-            figures = []
-            y_stft_list, x_hat_stft_list, x_stft_list = spec
-            for idx, (y_stft, x_hat_stft, x_stft) in enumerate(zip(y_stft_list, x_hat_stft_list, x_stft_list)):
-                figures.append(
-                    visualize_example(
-                    torch.abs(y_stft), 
-                    torch.abs(x_hat_stft), 
-                    torch.abs(x_stft), return_fig=True))
-            self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/Spec", figures)
-
-    def run_unconditional_sampling(self, *args, sr: int = 16000, **kwargs):
+    def run_unconditional_sampling(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
         
         figures = []
-        samples = self.unconditional_sampling(*args, **kwargs)
+        x, _ = batch
+        x_hat = self.unconditional_sampling(x[: self.num_unconditional_files], **kwargs)
 
-        for idx in len(samples):
-            self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Unconditional/{idx}", (samples[idx] / torch.max(torch.abs(samples[idx]))).unsqueeze(-1), sample_rate=sr, global_step=self.current_epoch)
-            figures.append(
-                visualize_one(
-                torch.abs(samples[idx]), return_fig=True))
-            self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/UnconditionalSpec", figures)
+        if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
+            for idx in len(x.size(0)):
+                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Unconditional/{idx}", (x_hat[idx] / torch.max(torch.abs(x_hat[idx]))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                figures.append(
+                    visualize_one(
+                    torch.abs(x_hat[idx]), return_fig=True))
+                self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/UnconditionalSpec", figures)
             
+    def run_supervised_enhancement(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
+        # Evaluate speech enhancement performance, for conditional models such as SGMSE+ and StoRM
+        x, y = batch
+        
+        x_hat = self.enhance(y, **kwargs)
+        self.log_metrics(x, y, x_hat, _max_vis_samples=_max_vis_samples)
+        self.log_audio(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
+        self.log_spec(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
+
     def to(self, *args, **kwargs):
         self.ema.to(*args, **kwargs)
         return super().to(*args, **kwargs)
@@ -405,9 +429,9 @@ class ScoreModel(pl.LightningModule):
         return self.data_module.istft(spec, length)
 
     def enhance(self, y, 
-        sampler_type="song", probability_flow=True, N=50, scheduler="linear",
-        predictor="euler-maruyama",
-        posterior="none", operator="reverberation", A=None, zeta=50., zeta_schedule="lin-increase",
+        sampler_type="song", probability_flow=True, N=50, scheduler="ve",
+        predictor="euler",
+        posterior="dps", operator="reverberation", A=None, zeta=60., zeta_schedule="saw-tooth-increase",
         corrector="ald", r=0.4, corrector_steps=1, 
         noise_std=1.007, smin=0.05, smax=.8, churn=.1,
         **kwargs
@@ -464,10 +488,10 @@ class ScoreModel(pl.LightningModule):
         x_hat = x_hat.squeeze().cpu()
         return x_hat
 
-    def unconditional_sampling(self, reference_tensor, num_samples_unconditional=4,
-        sampler_type="song", probability_flow=True, N=50, scheduler="linear",
-        predictor="euler-maruyama",
-        posterior="none", operator="none", A=None, zeta=50., zeta_schedule="lin-increase",
+    def unconditional_sampling(self, reference_tensor, 
+        sampler_type="song", probability_flow=True, N=50, scheduler="ve",
+        predictor="euler",
+        posterior="none", operator="none", A=None, zeta=0., zeta_schedule="none",
         corrector="ald", r=0.4, corrector_steps=1, 
         noise_std=1.007, smin=0.05, smax=.8, churn=.1,
         **kwargs
@@ -475,12 +499,8 @@ class ScoreModel(pl.LightningModule):
         """
         One-call unconditional sampling, for convenience.
         """
-        A = None
         score_conditioning = []
-        operator = "none"
-        posterior = "none"
-        Y = reference_tensor[: num_samples_unconditional]
-        zeta=0
+        Y = reference_tensor
 
         if sampler_type == "song":
             sampler = self.get_song_sampler(
@@ -508,3 +528,51 @@ class ScoreModel(pl.LightningModule):
             x_hat = self.to_audio(sample.squeeze() )
         x_hat = x_hat.squeeze().cpu()
         return x_hat
+    
+    def log_metrics(self, x, y, x_hat, _max_vis_samples=10):
+
+        _si_sdr, _pesq, _estoi = np.zeros((_max_vis_samples,)), np.zeros((_max_vis_samples,)), np.zeros((_max_vis_samples,))
+
+        for i in range(x.size(0)):
+            _si_sdr[i] = si_sdr(x[i], x_hat[i])
+            if self.data_module.sample_rate == 16000:
+                x_resampled = x.cpu().numpy()
+                x_hat_resampled = x_hat.cpu().numpy()
+            else:
+                print("Not 16kHz. Resampling to 16kHz for PESQ and (E)STOI")
+                x_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x).cpu().numpy()
+                x_hat_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x_hat).cpu().numpy()
+            _pesq[i] = pesq(16000, x_resampled[i], x_hat_resampled[i], 'wb') 
+            _estoi[i] = stoi(x_resampled[i], x_hat_resampled[i], 16000, extended=True)
+
+        print(f"PESQ at epoch {self.current_epoch} : {_pesq.mean():.2f}")
+        print(f"SISDR at epoch {self.current_epoch} : {_si_sdr.mean():.1f}")
+        print(f"ESTOI at epoch {self.current_epoch} : {_estoi.mean():.2f}")
+        print('__________________________________________________________________')
+        
+        self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True)
+        self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True)
+        self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True)
+
+    def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
+
+        if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
+            for idx, (x, y, x_hat) in enumerate(zip(x, y, x_hat)):
+                if self.current_epoch == 0:
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{idx}", (x / torch.max(x)).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{idx}", (y / torch.max(torch.abs(y))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{idx}", (x_hat / torch.max(torch.abs(x_hat))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+
+    def log_spec(self, x, y, x_hat, _max_vis_samples=10, _vis_epochs=10):
+
+        x_stft, y_stft, x_hat_stft, x_stft = self._stft(x[: _max_vis_samples]), self._stft(y[: _max_vis_samples]), self._stft(x_hat[: _max_vis_samples])
+
+        if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
+            figures = []
+            for idx, (X, Y, X_hat) in enumerate(zip(x_stft, y_stft, x_hat_stft)):
+                figures.append(
+                    visualize_example(
+                    torch.abs(Y), 
+                    torch.abs(X_hat), 
+                    torch.abs(X), return_fig=True))
+            self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/Spec", figures)

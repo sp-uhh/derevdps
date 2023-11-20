@@ -128,7 +128,7 @@ class SDE(abc.ABC):
 
 @SDERegistry.register("ve")
 class VESDE(SDE):
-    def __init__(self, sigma_min, sigma_max, N=50, scheduler='ve-song', **kwargs):
+    def __init__(self, sigma_min, sigma_max, N=50, scheduler='ve', **kwargs):
         """Construct a Variance Exploding SDE.
 
         dx = sigma(t) dw
