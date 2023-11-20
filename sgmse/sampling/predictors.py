@@ -48,10 +48,6 @@ class EulerMaruyamaPredictor(Predictor):
     def update_fn(self, x, t, dt, conditioning, sde_input, **kwargs):
         z = torch.randn_like(x)
         f, g, score = self.rsde.sde(x, t, conditioning, sde_input, **kwargs)
-        # print("pred f rev", torch.linalg.norm(f))
-        # print("pred g rev", torch.linalg.norm(g))
-        print("pred score", torch.linalg.norm(score))
-        print("pred dt", dt)
         x_mean = x + f * dt
         if g.ndim < x.ndim:
             g = g.view( *g.size(), *((1,)*(x.ndim - g.ndim)) )

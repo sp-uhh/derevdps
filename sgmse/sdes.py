@@ -46,7 +46,6 @@ class SDE(abc.ABC):
             print(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
         starting_time_step = self.scheduler.continuous_step(self.T) 
         std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
-        print("prior std", std)
         std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
         if unconditional_prior:
             return torch.randn_like(y) * std
@@ -74,25 +73,6 @@ class SDE(abc.ABC):
         """
         pass
 
-    # def discretize(self, x, t, *args):
-    #     """Discretize the SDE in the form: x_{i+1} = x_i + f_i(x_i) + G_i z_i.
-
-    #     Useful for reverse diffusion sampling and probabiliy flow sampling.
-    #     Defaults to Euler-Maruyama discretization.
-
-    #     Args:
-    #         x: a torch tensor
-    #         t: a torch float representing the time step (from 0 to `self.T`)
-
-    #     Returns:
-    #         f, G
-    #     """
-    #     dt = 1 / self.N
-    #     drift, diffusion = self.sde(x, t, *args)
-    #     f = drift * dt
-    #     G = diffusion * torch.sqrt(torch.tensor(dt, device=t.device))
-    #     return f, G
-
     def reverse(oself, score_model, probability_flow, diffusion_power_gradient=None):
         """Create the reverse-time SDE/ODE.
 
@@ -105,8 +85,6 @@ class SDE(abc.ABC):
         N = oself.N
         T = oself.T
         sde_fn = oself.sde
-        # discretize_fn = oself.discretize
-        std_fn = oself._std
 
         # Build the class for reverse-time SDE.
         class RSDE(oself.__class__):
@@ -127,19 +105,10 @@ class SDE(abc.ABC):
                 return total_drift, diffusion, score
 
             def rsde_parts(self, x, t, conditioning, sde_input, **kwargs):
-
-                t_sde = oself.sigma_min**2 * (oself.sigma_max / oself.sigma_min)**(2*t)
-                sde_drift, sde_diffusion = sde_fn(x, t_sde, sde_input)
-
-                # sde_drift, sde_diffusion = sde_fn(x, t, sde_input)
+                sde_drift, sde_diffusion = sde_fn(x, t, sde_input)
                 score = score_model(x, t, score_conditioning=conditioning)
                 if sde_diffusion.ndim < x.ndim:
                     sde_diffusion = sde_diffusion.view(*sde_diffusion.size(), *((1,)*(x.ndim - sde_diffusion.ndim)))
-
-                # print("x", x.abs().mean())/
-                # print("t", t)
-                # print("g", sde_diffusion)
-                # print("sde score", torch.linalg.norm(score))
 
                 score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.) #Correct one
                 diffusion = torch.zeros_like(sde_diffusion) if self.probability_flow else sde_diffusion
@@ -149,16 +118,6 @@ class SDE(abc.ABC):
                     'total_drift': total_drift, 'diffusion': diffusion, 'sde_drift': sde_drift,
                     'sde_diffusion': sde_diffusion, 'score_drift': score_drift, 'score': score
                 }
-
-            # def discretize(self, x, t, conditioning, sde_input, **kwargs):
-            #     """Create discretized iteration rules for the reverse diffusion sampler."""
-            #     f, G = discretize_fn(x, t, sde_input)
-            #     if G.ndim < x.ndim:
-            #         G = G.view(*G.size(), *((1,)*(x.ndim - G.ndim)))
-            #     score = score_model(x, t, score_conditioning=conditioning)
-            #     rev_f = f - G**2 * score * (0.5 if self.probability_flow else 1.)
-            #     rev_G = torch.zeros_like(G) if self.probability_flow else G
-            #     return rev_f, rev_G, score
 
         return RSDE()
 
@@ -205,7 +164,6 @@ class VESDE(SDE):
 
     def sde(self, x, t, *args, **kwargs):
         sigma = torch.sqrt(t)
-        # sigma = self.sigma_min * (self.sigma_max / self.sigma_min) ** t # TMP : I have not harmonized with std properly yet
         diffusion = sigma * np.sqrt(2 * self.logsig)
         return .0, diffusion
 
@@ -216,7 +174,6 @@ class VESDE(SDE):
         # This is a full solution to the ODE for P(t) in our derivations, after choosing g(s) as in self.sde()
         # COnfirmed by Karras et al. eq. 199
         return self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1)
-        # return self.sigma_min*torch.sqrt(torch.exp(2 * self.logsig * t) - 1)  # TMP : I have not harmonized with std properly yet
 
     def marginal_prob(self, x0, t, *args, **kwargs):
         return self._mean(x0, t), self._std(t)
@@ -225,18 +182,12 @@ class VESDE(SDE):
         raise NotImplementedError("prior_logp for VE SDE not yet implemented!")
 
     def tweedie_from_score(self, score, x, t, *args):
-        t_sde = self.sigma_min**2 * (self.sigma_max / self.sigma_min)**(2*t) #TMP
-        sigma = self._std(t_sde)
-
-        # sigma = self._std(t)
+        sigma = self._std(t)
         sigma = sigma.view(sigma.size(0), *(1,)*(score.ndim - sigma.ndim))
         return x + sigma**2 * score
     
     def score_from_tweedie(self, tweedie, x, t, *args):
-        t_sde = self.sigma_min**2 * (self.sigma_max / self.sigma_min)**(2*t) #TMP
-        sigma = self._std(t_sde)
-
-        # sigma = self._std(t)
+        sigma = self._std(t)
         sigma = sigma.view(sigma.size(0), *(1,)*(tweedie.ndim - sigma.ndim))
         return 1 / sigma**2 * (tweedie - x)
 

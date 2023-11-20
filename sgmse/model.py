@@ -168,33 +168,28 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "song":
             if not t.ndim:
                 t = t.unsqueeze(0)
-            return t
-        
+            c_noise = t
         if self.preconditioning == "song_sigma":
             sigma = self.sde._std(t).squeeze()
-            sigma = sigma.unsqueeze(0)
-            return sigma
-        
+            c_noise = sigma.unsqueeze(0)
         if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             if not sigma.ndim:
                 sigma = sigma.unsqueeze(0)
-            sigma = sigma **.25
-            return sigma
+            c_noise = sigma **.25
+
+        return c_noise
 
     def preconditioning_output(self, dnn_output, t):
         if self.preconditioning == "song":
-            t_sde = self.sde.sigma_min**2 * (self.sde.sigma_max / self.sde.sigma_min)**(2*t) #TMP
-            sigma = self.sde._std(t_sde).squeeze()
-            # print("sigma", sigma)
-
-            # sigma = self.sde._std(t).squeeze()
+            sigma = self.sde._std(t).squeeze()
             scale = sigma
         if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
             scale = sigma * self.sigma_data / torch.sqrt( self.sigma_data**2 + sigma**2)
         if scale.ndim and scale.ndim < dnn_output.ndim:
             scale = scale.view(scale.size(0), *(1,)*(dnn_output.ndim - scale.ndim))
+
         return scale * dnn_output
 
     def preconditioning_skip(self, x, t):
@@ -205,6 +200,7 @@ class ScoreModel(pl.LightningModule):
             scale = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
             if scale.ndim and scale.ndim < x.ndim:
                 scale = scale.view(scale.size(0), *(1,)*(x.ndim - scale.ndim))
+
         return scale * x
 
     def preconditioning_loss(self, loss, sigma):
@@ -214,6 +210,7 @@ class ScoreModel(pl.LightningModule):
             weight = (sigma**2 + self.sigma_data**2) / (sigma + self.sigma_data)**2
         if self.preconditioning == "karras_eloi":
             weight = 1.
+
         return weight * loss
 
 
@@ -223,27 +220,23 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "karras":
             log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
             sigma = self.t_eps + torch.exp(log_sigma)
-            t = self.sde._inverse_std(sigma)
+            t = self.sde._inverse_std(sigma) #identity in EDM SDE
         if self.preconditioning == "karras_eloi":
             a = torch.rand(x.shape[0], device=x.device)
             sigma = (self.sde.sigma_max**(1/self.sde.rho) + a*(self.sde.sigma_min**(1/self.sde.rho) - self.sde.sigma_max**(1/self.sde.rho)))**self.sde.rho
-            t = self.sde._inverse_std(sigma)
+            t = self.sde._inverse_std(sigma) #identity in EDM SDE
+
         return t
 
     def forward(self, x, t, score_conditioning, **kwargs):
         dnn_input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
         dnn_input = self.preconditioning_input(dnn_input, t)
-        # print("dnn input", dnn_input.abs().mean(), dnn_input.std(), torch.linalg.norm(dnn_input))
         noise_input = self.preconditioning_noise(t)
-        # print("noise input", noise_input.abs().mean())
         dnn_output = self.dnn(dnn_input, noise_input)
-        # print("dnn output", dnn_output.abs().mean(), dnn_output.std(), torch.linalg.norm(dnn_output))
         output = self.preconditioning_output(dnn_output, t)
-        # print("preconditioned output",output.abs().mean(), output.std(), torch.linalg.norm(output))
         skip = self.preconditioning_skip(x, t)
-        # print("preconditioned skip", skip.abs().mean())
         tweedie_denoiser = skip + output
-        # print("tweedie denoiser", tweedie_denoiser.abs().mean(), tweedie_denoiser.std(), torch.linalg.norm(tweedie_denoiser))
+        
         return tweedie_denoiser
 
     def _step(self, batch, batch_idx):
