@@ -33,6 +33,10 @@ class Posterior(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def grad_required(self, t):
+        pass
+
     def tweedie_from_score(self, score, x, t, *args):
         return self.sde.tweedie_from_score(score, x, t, *args)
 
@@ -46,23 +50,34 @@ class NoPosteriorSampling(Posterior):
     def update_fn(self, x, *args, **kwargs):
         return x, None, torch.Tensor([0.]), None, None
 
+    def grad_required(self, t, **kwargs):
+        return False
 
 @PosteriorRegistry.register('dps')
 class PosteriorSampling(Posterior):
     
     def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+        # print("before", x.requires_grad)
         x_0_hat = self.tweedie_from_score(score, x, t, sde_input)
+        # print("after", x_0_hat.requires_grad)
         measurement_linear, x_0_hat_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_0_hat.squeeze(0)).unsqueeze(0)
-        self.operator.load_weights(A)
+        self.operator.load_weights(A.squeeze(0))
 
-        measurement_estimated = self.operator.forward(x_0_hat_linear.squeeze(0)).unsqueeze(0)
+        # measurement_estimated = self.operator.forward(x_0_hat_linear.squeeze(0)).unsqueeze(0) #TMP
+        measurement_estimated = self.operator.forward(x_0_hat_linear)
+
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
+
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
-        x  = x + norm_grad * self.zeta * dt #dt < 0
+        normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
+        
+        x  = x + norm_grad * self.zeta / normguide * dt #dt < 0
         return x, A, norm, measurement_estimated, x_0_hat_linear
 
-
+    def grad_required(self, t, **kwargs):
+        return self.zeta > 0
+    
 @PosteriorRegistry.register('state-dps')
 class StateDPSPosteriorSampling(Posterior):
     
@@ -75,53 +90,62 @@ class StateDPSPosteriorSampling(Posterior):
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+        normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
 
-        x  = x + norm_grad * self.zeta * dt #dt < 0
+        x  = x + norm_grad * self.zeta / normguide * dt #dt < 0
         return x, A, norm, measurement_estimated, x_linear
 
-
-@PosteriorRegistry.register('switching')
-class SwitchingPosteriorSampling(Posterior):
-    """Switch between DPS and StateDPS after a certain time
-    """
+    def grad_required(self, t, **kwargs):
+        return self.zeta > 0
     
-    def update_fn(self, x, t, measurement, sde_input, score, A, *args, **kwargs):
-        if t > kwargs["sw"]:
-            x_tangent = self.tweedie_from_score(score, x, t, sde_input)
-        else:
-            x_tangent = x.requires_grad_(True)
-        
-        measurement_linear, x_tangent_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_tangent.squeeze(0)).unsqueeze(0)
-        self.operator.load_weights(A)
 
-        measurement_estimated = self.operator.forward(x_tangent_linear.squeeze(0)).unsqueeze(0)
-        difference = measurement_linear - measurement_estimated
-        norm = torch.linalg.norm(difference)
-        norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
-        x  = x + norm_grad * self.zeta * dt #dt < 0
-
-        return x, A, norm, measurement_estimated, x_tangent_linear
-
-
-
-@PosteriorRegistry.register('reverse-switching')
-class ReverseSwitchingPosteriorSampling(Posterior):
-    """Switch between StateDPS and DPS after a certain time
-    """
+# @PosteriorRegistry.register('switching')
+# class SwitchingPosteriorSampling(Posterior):
+#     """Switch between DPS and StateDPS after a certain time
+#     """
     
-    def update_fn(self, x, t, measurement, sde_input, score, A, *args, **kwargs):
-        if t < kwargs["sw"]:
-            x_tangent = self.tweedie_from_score(score, x, t, sde_input)
-        else:
-            x_tangent = x.requires_grad_(True)
+#     def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+#         if t > kwargs["sw"]:
+#             x_tangent = self.tweedie_from_score(score, x, t, sde_input)
+#         else:
+#             x_tangent = x.requires_grad_(True)
         
-        measurement_linear, x_tangent_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_tangent.squeeze(0)).unsqueeze(0)
-        self.operator.load_weights(A)
+#         measurement_linear, x_tangent_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_tangent.squeeze(0)).unsqueeze(0)
+#         self.operator.load_weights(A)
 
-        measurement_estimated = self.operator.forward(x_tangent_linear.squeeze(0)).unsqueeze(0)
-        difference = measurement_linear - measurement_estimated
-        norm = torch.linalg.norm(difference)
-        norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
-        x  = x + norm_grad * self.zeta * dt #dt < 0
+#         measurement_estimated = self.operator.forward(x_tangent_linear.squeeze(0)).unsqueeze(0)
+#         difference = measurement_linear - measurement_estimated
+#         norm = torch.linalg.norm(difference)
+#         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+#         x  = x + norm_grad * self.zeta * dt #dt < 0
 
-        return x, A, norm, measurement_estimated, x_tangent_linear
+#         return x, A, norm, measurement_estimated, x_tangent_linear
+
+#     def grad_required(self, t, **kwargs):
+#         return self.zeta > 0 and t > kwargs["sw"]
+
+
+# @PosteriorRegistry.register('reverse-switching')
+# class ReverseSwitchingPosteriorSampling(Posterior):
+#     """Switch between StateDPS and DPS after a certain time
+#     """
+    
+#     def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+#         if t < kwargs["sw"]:
+#             x_tangent = self.tweedie_from_score(score, x, t, sde_input)
+#         else:
+#             x_tangent = x.requires_grad_(True)
+        
+#         measurement_linear, x_tangent_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_tangent.squeeze(0)).unsqueeze(0)
+#         self.operator.load_weights(A)
+
+#         measurement_estimated = self.operator.forward(x_tangent_linear.squeeze(0)).unsqueeze(0)
+#         difference = measurement_linear - measurement_estimated
+#         norm = torch.linalg.norm(difference)
+#         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+#         x  = x + norm_grad * self.zeta * dt #dt < 0
+
+#         return x, A, norm, measurement_estimated, x_tangent_linear
+
+#     def grad_required(self, t, **kwargs):
+#         return self.zeta > 0 and t < kwargs["sw"]

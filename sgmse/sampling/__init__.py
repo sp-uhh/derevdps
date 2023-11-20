@@ -10,7 +10,7 @@ from .predictors import Predictor, PredictorRegistry
 from .correctors import Corrector, CorrectorRegistry
 from .posteriors import Posterior, PosteriorRegistry
 from .operators import LinearOperator, OperatorRegistry
-from .schedulers import Scheduler, SchedulerRegistry, LinearScheduler, KarrasScheduler
+from .schedulers import Scheduler, SchedulerRegistry
 
 __all__ = [
     'PredictorRegistry', 'CorrectorRegistry', 'PosteriorRegistry', 'OperatorRegistry', 'SchedulerRegistry'
@@ -28,7 +28,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=50):
+def pick_zeta_schedule(schedule, t, zeta, clip=1e8):
     if schedule == "none":
         return None
     if schedule == "const":
@@ -46,9 +46,9 @@ def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=50):
     if schedule == "log-increase":
         zeta_t = zeta * np.log(1+1e10+t)
     if schedule == "div-sig":
-        zeta_t = zeta / sigma_t
+        zeta_t = zeta / t
     if schedule == "div-sig-square":
-        zeta_t = zeta / sigma_t**2
+        zeta_t = zeta / t**2
     if schedule == "saw-tooth-increase":
         max_step = .9
         if t < max_step: #ramp from 0 to zeta0 in rho_max
@@ -60,7 +60,7 @@ def pick_zeta_schedule(schedule, t, sigma_t, zeta, clip=50):
 
 
 def get_song_sampler(
-    predictor_name = "euler-maruyama", scheduler_name = "linear", sde = "ve", score_fn = None, sde_input = None, 
+    predictor_name = "euler-maruyama", scheduler_name = "ve-song", sde = "ve", score_fn = None, sde_input = None, 
     eps = 3e-2, probability_flow = True,  conditioning = "none",
     posterior_name = "none", operator = "none", measurement = None, A = None, zeta = 50, zeta_schedule = "lin-increase", linearization = None,
     corrector_name = "ald", r = .5, corrector_steps = 1, denoise = True,
@@ -88,32 +88,32 @@ def get_song_sampler(
     scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
     posterior_cls = PosteriorRegistry.get_by_name(posterior_name)
     predictor = predictor_cls(sde, score_fn, probability_flow=probability_flow)
-    corrector = corrector_cls(sde, score_fn, r=r, n_steps=corrector_steps)
+    corrector = corrector_cls(sde, score_fn, probability_flow=probability_flow, r=r, n_steps=corrector_steps)
     posterior = posterior_cls(sde, operator, linearization, zeta=zeta)
     scheduler = scheduler_cls(eps=eps, **sde.__dict__, **kwargs)
     
     def song_sampler():
         """The Posterior sampler function."""
-        path = kwargs.get("path", None)
         zeta0 = posterior.zeta
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        timesteps = scheduler.timesteps().to(xt.device)
+        timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
             dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
             t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
             if posterior_name != "none":
-                posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
+                # posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
+                posterior.zeta = pick_zeta_schedule(zeta_schedule, min(1., t.cpu().item() / scheduler.continuous_step(sde.T)), zeta0) #weird fix for now
 
             # corrector
             with torch.no_grad():
                 xt, xt_mean = corrector.update_fn(xt, t, dt, conditioning=conditioning, sde_input=sde_input)
 
             # predictor
-            grad_required = posterior_name == "dps" or (posterior_name == "switching" and timesteps[i].item() > kwargs["sw"]) or (posterior_name == "reverse-switching" and timesteps[i].item() < kwargs["sw"])
+            grad_required = posterior.grad_required(t)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 xt, xt_mean, score = predictor.update_fn(xt, t, dt, conditioning=conditioning, sde_input=sde_input)
@@ -133,8 +133,8 @@ def get_song_sampler(
 
 
 def get_karras_sampler(
-    predictor_name = "euler-heun", scheduler_name = "linear", sde = "ve", score_fn = None, sde_input = None, 
-    eps = 3e-2, probability_flow = True,  conditioning = "none", 
+    predictor_name = "euler-heun", scheduler_name = "edm", sde = "edm", score_fn = None, sde_input = None, 
+    eps = 0., probability_flow = True,  conditioning = "none", 
     posterior_name = "none", operator = "none", measurement = None, A = None, zeta = 50, zeta_schedule = "lin-increase", linearization = None,
     noise_std = 1.007, smin = 0.05, smax = .8, churn = .1,
     **kwargs
@@ -164,25 +164,25 @@ def get_karras_sampler(
     
     def karras_sampler():
         """The Posterior sampler function."""
-        path = kwargs.get("path", None)
         zeta0 = posterior.zeta
         xt = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
         At = A
         distance = torch.Tensor([.0])
-        timesteps = scheduler.timesteps().to(xt.device)
+        timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
-            dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
             z = noise_std * torch.randn_like(xt)
             gamma = min(churn/sde.N, np.sqrt(2)-1.) if (timesteps[i] > smin and timesteps[i] < smax) else 0.
             t_overnoised = timesteps[i]*(1 + gamma)
+            dt = timesteps[i+1] - t_overnoised # dt < 0 (time flowing in reverse)
             if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), sde._std(t_overnoised).cpu().item(), zeta0)
-            xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
+            if gamma > 0:
+                xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
 
             # predictor
-            grad_required = posterior_name == "dps" or (posterior_name == "switching" and timesteps[i].item() > kwargs["sw"]) or (posterior_name == "reverse-switching" and timesteps[i].item() < kwargs["sw"])
+            grad_required = posterior.grad_required(timesteps[i].item(), **kwargs)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 xt, xt_mean, score = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input, **kwargs)

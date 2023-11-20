@@ -4,15 +4,12 @@ Abstract SDE classes, Reverse SDE, and VE/VP SDEs.
 Taken and adapted from https://github.com/yang-song/score_sde_pytorch/blob/1618ddea340f3e4a2ed7852a0694a809775cf8d0/sde_lib.py
 """
 import abc
-from email.policy import default
-import warnings
-
 import numpy as np
-from sgmse.util.tensors import batch_broadcast
 import torch
 
+from sgmse.util.tensors import batch_broadcast
 from sgmse.util.registry import Registry
-import os
+from sgmse.sampling.schedulers import SchedulerRegistry
 
 SDERegistry = Registry("SDE")
 
@@ -20,7 +17,7 @@ SDERegistry = Registry("SDE")
 class SDE(abc.ABC):
     """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, N):
+    def __init__(self, N=50):
         """Construct an SDE.
 
         Args:
@@ -44,10 +41,16 @@ class SDE(abc.ABC):
         """Parameters to determine the marginal distribution of the SDE, $p_t(x|args)$."""
         pass
 
-    @abc.abstractmethod
-    def prior_sampling(self, shape, *args, **kwargs):
-        """Generate one sample from the prior distribution, $p_T(x|args)$ with shape `shape`."""
-        pass
+    def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
+        if shape != y.shape:
+            print(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
+        starting_time_step = self.scheduler.continuous_step(self.T) 
+        std = self._std(starting_time_step * torch.ones((y.shape[0],), device=y.device))
+        std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
+        if unconditional_prior:
+            return torch.randn_like(y) * std
+        else:
+            return y + torch.randn_like(y) * std
 
     @abc.abstractmethod
     def prior_logp(self, z):
@@ -70,26 +73,7 @@ class SDE(abc.ABC):
         """
         pass
 
-    def discretize(self, x, t, *args):
-        """Discretize the SDE in the form: x_{i+1} = x_i + f_i(x_i) + G_i z_i.
-
-        Useful for reverse diffusion sampling and probabiliy flow sampling.
-        Defaults to Euler-Maruyama discretization.
-
-        Args:
-            x: a torch tensor
-            t: a torch float representing the time step (from 0 to `self.T`)
-
-        Returns:
-            f, G
-        """
-        dt = 1 / self.N
-        drift, diffusion = self.sde(x, t, *args)
-        f = drift * dt
-        G = diffusion * torch.sqrt(torch.tensor(dt, device=t.device))
-        return f, G
-
-    def reverse(oself, score_model, probability_flow=False, diffusion_power_gradient=None):
+    def reverse(oself, score_model, probability_flow, diffusion_power_gradient=None):
         """Create the reverse-time SDE/ODE.
 
         Args:
@@ -101,8 +85,6 @@ class SDE(abc.ABC):
         N = oself.N
         T = oself.T
         sde_fn = oself.sde
-        discretize_fn = oself.discretize
-        std_fn = oself._std
 
         # Build the class for reverse-time SDE.
         class RSDE(oself.__class__):
@@ -127,24 +109,15 @@ class SDE(abc.ABC):
                 score = score_model(x, t, score_conditioning=conditioning)
                 if sde_diffusion.ndim < x.ndim:
                     sde_diffusion = sde_diffusion.view(*sde_diffusion.size(), *((1,)*(x.ndim - sde_diffusion.ndim)))
-                # score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.)
-                score_drift = sde_diffusion**2 * score
+
+                score_drift = sde_diffusion**2 * score * (0.5 if self.probability_flow else 1.) #Correct one
                 diffusion = torch.zeros_like(sde_diffusion) if self.probability_flow else sde_diffusion
+
                 total_drift = sde_drift - score_drift
                 return {
                     'total_drift': total_drift, 'diffusion': diffusion, 'sde_drift': sde_drift,
                     'sde_diffusion': sde_diffusion, 'score_drift': score_drift, 'score': score
                 }
-
-            def discretize(self, x, t, conditioning, sde_input, **kwargs):
-                """Create discretized iteration rules for the reverse diffusion sampler."""
-                f, G = discretize_fn(x, t, sde_input)
-                if G.ndim < x.ndim:
-                    G = G.view(*G.size(), *((1,)*(x.ndim - G.ndim)))
-                score = score_model(x, t, score_conditioning=conditioning)
-                rev_f = f - G**2 * score * (0.5 if self.probability_flow else 1.)
-                rev_G = torch.zeros_like(G) if self.probability_flow else G
-                return rev_f, rev_G, score
 
         return RSDE()
 
@@ -155,7 +128,7 @@ class SDE(abc.ABC):
 
 @SDERegistry.register("ve")
 class VESDE(SDE):
-    def __init__(self, sigma_min, sigma_max, N=1000, **ignored_kwargs):
+    def __init__(self, sigma_min, sigma_max, N=50, scheduler='ve', **kwargs):
         """Construct a Variance Exploding SDE.
 
         dx = sigma(t) dw
@@ -174,6 +147,13 @@ class VESDE(SDE):
         self.sigma_max = sigma_max
         self.logsig = np.log(self.sigma_max / self.sigma_min)
         self.N = N
+        self.scheduler = SchedulerRegistry.get_by_name(scheduler)(
+            N=N,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            eps=0.,
+            **kwargs
+        )
 
     def copy(self):
         return VESDE(self.sigma_min, self.sigma_max, N=self.N)
@@ -183,7 +163,7 @@ class VESDE(SDE):
         return 1
 
     def sde(self, x, t, *args, **kwargs):
-        sigma = self.sigma_min * (self.sigma_max / self.sigma_min) ** t
+        sigma = torch.sqrt(t)
         diffusion = sigma * np.sqrt(2 * self.logsig)
         return .0, diffusion
 
@@ -192,25 +172,11 @@ class VESDE(SDE):
 
     def _std(self, t, *args, **kwargs):
         # This is a full solution to the ODE for P(t) in our derivations, after choosing g(s) as in self.sde()
-        sigma_min, logsig = self.sigma_min, self.logsig
-        return sigma_min*torch.sqrt(torch.exp(2 * logsig * t) - 1)
-
-    def _inverse_std(self, sigma, *args, **kwargs):
-        sigma_min, logsig = self.sigma_min, self.logsig
-        return torch.log(sigma**2/sigma_min**2 + 1)/(2*logsig)
+        # COnfirmed by Karras et al. eq. 199
+        return self.sigma_min * torch.sqrt(t / self.sigma_min**2 - 1)
 
     def marginal_prob(self, x0, t, *args, **kwargs):
         return self._mean(x0, t), self._std(t)
-
-    def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
-        if shape != y.shape:
-            warnings.warn(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
-        std = self._std(torch.ones((y.shape[0],), device=y.device))
-        std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
-        if unconditional_prior:
-            return torch.randn_like(y) * std
-        else:
-            return y + torch.randn_like(y) * std
 
     def prior_logp(self, z):
         raise NotImplementedError("prior_logp for VE SDE not yet implemented!")
@@ -227,20 +193,18 @@ class VESDE(SDE):
 
     @staticmethod
     def add_argparse_args(parser):
-        parser.add_argument("--sde_n", type=int, default=1000,
-            help="The number of timesteps in the SDE discretization. 1000 by default")
-        parser.add_argument("--sigma_min", type=float, default=0.05, 
+        parser.add_argument("--sigma_min", type=float, default=5e-2, 
             help="The minimum sigma to use.")
-        parser.add_argument("--sigma_max", type=float, default=0.5, 
+        parser.add_argument("--sigma_max", type=float, default=5e-1, 
             help="The maximum sigma to use.")
         return parser
 
 
 
 
-@SDERegistry.register("ve-karras")
-class VEKarrasSDE(SDE):
-    def __init__(self, N=1000, sigma_min=0.01, sigma_max=0.5, rho=7, **ignored_kwargs):
+@SDERegistry.register("edm")
+class EDM(SDE):
+    def __init__(self, sigma_min, sigma_max, rho, N=50, scheduler='edm', **kwargs):
         """Construct a Variance Exploding SDE.
 
         dx = sqrt( 2 sigma(t) ) dw
@@ -255,9 +219,17 @@ class VEKarrasSDE(SDE):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho
+        self.scheduler = SchedulerRegistry.get_by_name(scheduler)(
+            N=N,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            eps=0.,
+            rho=rho,
+            **kwargs
+        )
 
     def copy(self):
-        return VEKarrasSDE(N=self.N)
+        return EDM(N=self.N)
 
     @property
     def T(self):
@@ -274,22 +246,8 @@ class VEKarrasSDE(SDE):
         sigma = t
         return sigma
 
-    def _inverse_std(self, sigma, *args, **kwargs):
-        t = sigma
-        return t
-
     def marginal_prob(self, x0, t, *args, **kwargs):
         return self._mean(x0, t), self._std(t)
-
-    def prior_sampling(self, shape, y, unconditional_prior=True, **kwargs):
-        if shape != y.shape:
-            warnings.warn(f"Target shape {shape} does not match shape of y {y.shape}! Ignoring target shape.")
-        std = self._std(torch.ones((y.shape[0],), device=y.device))
-        std = std.view(std.size(0), *(1,)*(y.ndim - std.ndim))
-        if unconditional_prior:
-            return torch.randn_like(y) * std
-        else:
-            return y + torch.randn_like(y) * std
 
     def prior_logp(self, z):
         raise NotImplementedError("prior_logp for VE SDE not yet implemented!")
@@ -306,11 +264,9 @@ class VEKarrasSDE(SDE):
 
     @staticmethod
     def add_argparse_args(parser):
-        parser.add_argument("--sde_n", type=int, default=1000,
-            help="The number of timesteps in the SDE discretization. 1000 by default")
-        parser.add_argument("--sigma_min", type=float, default=0.01, 
+        parser.add_argument("--sigma_min", type=float, default=1e-5, 
             help="The minimum sigma to use.")
-        parser.add_argument("--sigma_max", type=float, default=0.5, 
+        parser.add_argument("--sigma_max", type=float, default=150., 
             help="The maximum sigma to use.")
         parser.add_argument("--rho", type=float, default=7.)
         return parser
