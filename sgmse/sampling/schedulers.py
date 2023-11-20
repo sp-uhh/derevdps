@@ -29,7 +29,8 @@ class Scheduler(abc.ABC):
 @SchedulerRegistry.register("ve-song")
 class VESongScheduler(Scheduler):
 
-    def __init__(self, N, eps=1e-6, sigma_min=5e-2, sigma_max=5e-1, **kwargs):
+    # def __init__(self, N, eps=1e-6, sigma_min=5e-2, sigma_max=5e-1, **kwargs):
+    def __init__(self, N, eps=3e-2, sigma_min=5e-2, sigma_max=5e-1, **kwargs):
         super().__init__(N, eps)
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
