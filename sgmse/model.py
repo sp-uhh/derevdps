@@ -79,15 +79,16 @@ class ScoreModel(pl.LightningModule):
         self.condition = condition
         self._reduce_op = lambda *args, **kwargs: 0.5 * torch.sum(*args, **kwargs)
 
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             self.p_mean = kwargs["p_mean"]
             self.p_std = kwargs["p_std"]
             self.sigma_data = kwargs["sigma_data"]
 
         self.nolog = nolog
+        
         # Just for logging loss versus sigma
-        t_bins = np.linspace(0, self.sde.T, 20)
-        sigma_bins = self.sde.scheduler.continuous_step(t_bins)
+        bins = np.linspace(0, self.sde.T, 20)
+        sigma_bins = self.sde._std(torch.from_numpy(self.sde.scheduler.continuous_step(bins))).numpy()
         self.loss_logger = SigmaLossLogger(sigma_bins)
         self.testset_dir = testset_dir or None
 
@@ -226,11 +227,11 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "karras":
             log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
             sigma = self.t_eps + torch.exp(log_sigma)
-            t = self.sde._inverse_std(sigma) #identity in EDM SDE
+            t = sigma #identity in EDM SDE
         if self.preconditioning == "karras_eloi":
             a = torch.rand(x.shape[0], device=x.device)
             sigma = (self.sde.sigma_max**(1/self.sde.rho) + a*(self.sde.sigma_min**(1/self.sde.rho) - self.sde.sigma_max**(1/self.sde.rho)))**self.sde.rho
-            t = self.sde._inverse_std(sigma) #identity in EDM SDE
+            t = sigma #identity in EDM SDE
 
         return t
 
@@ -294,9 +295,9 @@ class ScoreModel(pl.LightningModule):
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
         if isinstance(self.sde, VESDE):
-            kwargs = dict(sampler_type="song",predictor="euler-maruyama", scheduler="ve", probability_flow=True)
+            kwargs = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True)
         if isinstance(self.sde, EDM):
-            kwargs = dict(sampler_type="karras",predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=self.sde.sigma_min, smax=self.sde.sigma_max, churn=0, probability_flow=True)
+            kwargs = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
 
         if batch_idx == 0:
             if hasattr(self, "testset_dir") and self.testset_dir is not None:

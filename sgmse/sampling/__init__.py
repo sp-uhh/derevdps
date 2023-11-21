@@ -173,7 +173,7 @@ def get_karras_sampler(
 
         for i in pbar:
             z = noise_std * torch.randn_like(xt)
-            gamma = min(churn/sde.N, np.sqrt(2)-1.) if (timesteps[i] > smin and timesteps[i] < smax) else 0.
+            gamma = min(churn/sde.N, np.sqrt(2)-1.) if (not(probability_flow) and timesteps[i] > smin and timesteps[i] < smax) else 0.
             t_overnoised = timesteps[i]*(1 + gamma)
             dt = timesteps[i+1] - t_overnoised # dt < 0 (time flowing in reverse)
             if posterior_name != "none":

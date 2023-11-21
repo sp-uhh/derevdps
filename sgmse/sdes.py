@@ -229,7 +229,7 @@ class EDM(SDE):
         )
 
     def copy(self):
-        return EDM(N=self.N)
+        return EDM(N=self.N, sigma_min=self.sigma_min, sigma_max=self.sigma_max, rho=self.rho)
 
     @property
     def T(self):
