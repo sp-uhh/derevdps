@@ -15,15 +15,27 @@
 
 # source .environment/bin/activate
 
+pc=spgpu1
+
+if [ "$pc" = sppc1 ]; then
+    data_dir=/data/lemercier/databases
+    home_dir=/export/home/lemercier
+elif [ "$pc" = spgpu1 ]; then
+    data_dir=/data/lemercier/databases
+    home_dir=/data1/lemercier
+elif [ "$pc" = spgpu2 ]; then
+    data_dir=/data3/lemercier/databases
+    home_dir=/export/home/lemercier
+fi;
 
 # # WSJ0 Song Scale Factor = 0.1
-# base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+# base_dir="$data_dir/wsj0+chime3/audio"
 # format="wsj0"
 # srun -K1 -u python3 train.py \
 #     --backbone ncsnpp \
 #     --format  $format \
 #     --base_dir $base_dir \
-#     --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+#     --testset_dir $data_dir/wsj0_derev_with_rir \
 #     --batch_size 8 \
 #     --gpus 2 \
 #     --spec_abs_exponent 1. \
@@ -35,18 +47,18 @@
 #     --num_unconditional_files 5 \
 #     --sigma_min 0.00001 \
 #     --sigma_max 17 \
-#     --resume_from_checkpoint /data1/lemercier/code/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_2/checkpoints/last.ckpt
+#     --resume_from_checkpoint $home_dir/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_2/checkpoints/last.ckpt
 
 
 
-base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+base_dir="$data_dir/wsj0+chime3/audio"
 format="wsj0"
 # WSJ0 EDM Scale Factor = 0.1
 srun -K1 -u python3 train.py \
     --backbone ncsnpp \
     --format  $format \
     --base_dir $base_dir \
-    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+    --testset_dir $data_dir/wsj0_derev_with_rir \
     --batch_size 8 \
     --gpus 2 \
     --spec_abs_exponent 1. \

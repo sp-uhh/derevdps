@@ -13,19 +13,29 @@
 #SBATCH --qos=wimi-compute
 #SBATCH --gres=gpu:2        # Number of GPUs to allocate
 
+pc=spgpu2
+
+if [ "$pc" = sppc1 ]; then
+    data_dir=/data/lemercier/databases
+    home_dir=/export/home/lemercier
+elif [ "$pc" = spgpu1 ]; then
+    data_dir=/data/lemercier/databases
+    home_dir=/data1/lemercier
+elif [ "$pc" = spgpu2 ]; then
+    data_dir=/data3/lemercier/databases
+    home_dir=/export/home/lemercier
+fi;
+
 # source .environment/bin/activate
 
-base_dir="/data3/lemercier/databases/vctk_56spk/audio"
-format="vctk"
-
 # VCTK Song Scale Factor = 0.1
-base_dir="/data/lemercier/databases/wsj0+chime3/audio"
-format="wsj0"
+base_dir="$data_dir/vctk_56spk/audio"
+format="vctk"
 srun -K1 -u python3 train.py \
     --backbone ncsnpp \
     --format  $format \
     --base_dir $base_dir \
-    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+    --testset_dir $data_dir/wsj0_derev_with_rir \
     --batch_size 8 \
     --gpus 2 \
     --spec_abs_exponent 1. \
