@@ -1,3 +1,0 @@
-srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
-slurmstepd: error: *** STEP 6420.0 ON spgpu1 CANCELLED AT 2023-11-22T14:11:58 ***
-slurmstepd: error: *** JOB 6420 ON spgpu1 CANCELLED AT 2023-11-22T14:11:58 ***
