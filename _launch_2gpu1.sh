@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8          # We have 64 total in spgpu2 and 32 in spgpu1, making it 8 cores per GPU process in both cases
 #SBATCH --partition=all
 #SBATCH --nodelist=spgpu1          # Or set it to spgpu1
-#SBATCH --job-name=song_wsj0
+#SBATCH --job-name=edm_wsj0
 #SBATCH --output=.slurm/%x-%j.out    # Save to folder ./jobs, %x means the job name. You may need to create this folder
 #SBATCH --error=.slurm/%x-%j.err
 #SBATCH --time=4-00:00             # Limit job to 4 days
@@ -16,32 +16,9 @@
 # source .environment/bin/activate
 
 
-# WSJ0 Song Scale Factor = 0.1
-base_dir="/data/lemercier/databases/wsj0+chime3/audio"
-format="wsj0"
-srun -K1 -u python3 train.py \
-    --backbone ncsnpp \
-    --format  $format \
-    --base_dir $base_dir \
-    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
-    --batch_size 8 \
-    --gpus 2 \
-    --spec_abs_exponent 1. \
-    --spec_factor 0.1 \
-    --condition none \
-    --sde ve \
-    --preconditioning song \
-    --num_eval_files 10 \
-    --num_unconditional_files 5 \
-    --sigma_min 0.00001 \
-    --sigma_max 17 \
-    --resume_from_checkpoint /data1/lemercier/code/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_1/checkpoints/epoch=18.ckpt
-
-
-
+# # WSJ0 Song Scale Factor = 0.1
 # base_dir="/data/lemercier/databases/wsj0+chime3/audio"
 # format="wsj0"
-# # WSJ0 EDM Scale Factor = 0.1
 # srun -K1 -u python3 train.py \
 #     --backbone ncsnpp \
 #     --format  $format \
@@ -52,10 +29,33 @@ srun -K1 -u python3 train.py \
 #     --spec_abs_exponent 1. \
 #     --spec_factor 0.1 \
 #     --condition none \
-#     --sde edm \
-#     --preconditioning karras_eloi \
+#     --sde ve \
+#     --preconditioning song \
 #     --num_eval_files 10 \
 #     --num_unconditional_files 5 \
 #     --sigma_min 0.00001 \
 #     --sigma_max 17 \
-#     --sigma_data 0.15
+#     --resume_from_checkpoint /data1/lemercier/code/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_2/checkpoints/last.ckpt
+
+
+
+base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+format="wsj0"
+# WSJ0 EDM Scale Factor = 0.1
+srun -K1 -u python3 train.py \
+    --backbone ncsnpp \
+    --format  $format \
+    --base_dir $base_dir \
+    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+    --batch_size 8 \
+    --gpus 2 \
+    --spec_abs_exponent 1. \
+    --spec_factor 0.1 \
+    --condition none \
+    --sde edm \
+    --preconditioning karras_eloi \
+    --num_eval_files 10 \
+    --num_unconditional_files 5 \
+    --sigma_min 0.00001 \
+    --sigma_max 17 \
+    --sigma_data 0.15
