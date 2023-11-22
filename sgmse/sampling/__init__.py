@@ -28,10 +28,10 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, zeta, clip=1e8):
+def pick_zeta_schedule(schedule, t, zeta, clip=50_000):
     if schedule == "none":
         return None
-    if schedule == "const":
+    if schedule == "constant":
         zeta_t = zeta
     if schedule == "lin-increase":
         zeta_t = zeta * t
@@ -158,8 +158,12 @@ def get_karras_sampler(
     predictor_cls = PredictorRegistry.get_by_name(predictor_name)
     scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
     posterior_cls = PosteriorRegistry.get_by_name(posterior_name)
-    predictor = predictor_cls(sde, score_fn, probability_flow=probability_flow)
-    posterior = posterior_cls(sde, operator, linearization, zeta=zeta)
+    if predictor_name=="euler-heun-dps": #Integrate DPS in Predictor, as one DPS step is used per score estimation.
+        predictor = predictor_cls(sde, score_fn,  operator, linearization, zeta, probability_flow=False)
+        posterior = predictor #For zeta updates
+    else:
+        predictor = predictor_cls(sde, score_fn,probability_flow=probability_flow)
+        posterior = posterior_cls(sde, operator, linearization, zeta=zeta)
     scheduler = scheduler_cls(eps=eps, **sde.__dict__, **kwargs)
     
     def karras_sampler():
@@ -177,7 +181,7 @@ def get_karras_sampler(
             t_overnoised = timesteps[i]*(1 + gamma)
             dt = timesteps[i+1] - t_overnoised # dt < 0 (time flowing in reverse)
             if posterior_name != "none":
-                posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), sde._std(t_overnoised).cpu().item(), zeta0)
+                posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), zeta0)
             if gamma > 0:
                 xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
 
@@ -185,14 +189,20 @@ def get_karras_sampler(
             grad_required = posterior.grad_required(timesteps[i].item(), **kwargs)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
-                xt, xt_mean, score = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
+                if predictor_name=="euler-heun-dps":
+                    xt, xt_mean, score, At, distance = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input,measurement=measurement, A=At, **kwargs)
+                else:
+                    xt, xt_mean, score = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
     
             # posterior
-            if i < sde.N - 1:
+            if i < sde.N - 1 and predictor_name != "euler-heun-dps" and posterior.zeta > 0.:
                 t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
                 xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
                 xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
-                pbar.set_postfix({'distance': distance.item()}, refresh=False)
+            pbar.set_postfix({'distance': distance.item()}, refresh=False)
+
+            if grad_required:
+                xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
 
         x_result = xt
         ns = sde.N * (int(grad_required) + 1)

@@ -1,5 +1,6 @@
 baseline_kodrasi
 results
+.exp
 .logs
 .slurm
 __pycache__
