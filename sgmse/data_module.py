@@ -85,7 +85,7 @@ class Specs(Dataset):
 		y, _ = load(self.noisy_files[i])
 
 		if sr != self.sample_rate: #Resample
-			print(f"Resampling the data ({sr}) to the expected sampling rate ({self.sample_rate}), probably something wrong is happening")
+			# print(f"Resampling the data ({sr}) to the expected sampling rate ({self.sample_rate}), probably something wrong is happening")
 			x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)(x)
 			y = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)(y)
 

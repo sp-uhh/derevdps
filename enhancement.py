@@ -48,7 +48,6 @@ def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
 base_parser = ArgumentParser(add_help=False)
 parser = ArgumentParser()
 for parser_ in (base_parser, parser):
-<<<<<<< HEAD
     # parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
     # parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
     # parser_.add_argument("--ckpt", type=str, help="Which pretrained checkpoint to use", required=True) 
@@ -59,11 +58,6 @@ for parser_ in (base_parser, parser):
     parser_.add_argument("--ckpt", type=str, help="Which pretrained checkpoint to use", default="/export/home/lemercier/code/score_derev/.logs/waspaa2023/mode=score-only_sde=VESDE_backbone=ncsnpp_data=reverb_ch=1/version_11_alpha=1.0_beta=0.1_sigma=0.5_pre=song/checkpoints/epoch=204.ckpt")
     parser_.add_argument("--rir_dir", type=str, default="/data3/lemercier/databases/wsj0_derev_with_rir/rir/tt", help="Directory containing your RIRs.")
     
-=======
-    parser_.add_argument("--test_dir", type=str, required=True, help="Directory containing your corrupted files to enhance.")
-    parser_.add_argument("--enhanced_dir", type=str, required=True, help="Where to write your cleaned files.")
-    parser_.add_argument("--ckpt", required=True)
->>>>>>> 4f0f61ed7da3b7a37a96f3f15ef1894be366934d
     parser_.add_argument("--n", type=int, default=-1, help="Number of cropped files")
     parser_.add_argument("--gpu", type=int, default=0, help="Which GPU to perform inference on")
 

@@ -15,7 +15,7 @@ hop_length = 128
 
 stft_kwargs = {"n_fft": n_fft, "hop_length": hop_length, "window": torch.hann_window(n_fft), "center": True, "return_complex": True}
 
-def visualize_example(mix, estimate, target, idx_sample=0, epoch=0, name="", sample_rate=16000, hop_len=128, return_fig=False):
+def visualize_example(mix, estimate, target, spec_path=None, name="", sample_rate=16000, hop_len=128, return_fig=False):
     """Visualize training targets and estimates of the Neural Network
     Args:
         - mix: Tensor [F, T]
@@ -23,12 +23,24 @@ def visualize_example(mix, estimate, target, idx_sample=0, epoch=0, name="", sam
     """
 
     if isinstance(mix, torch.Tensor):
-        mix = torch.abs(mix).detach().cpu()
-        estimate = torch.abs(estimate).detach().cpu()
-        target = torch.abs(target).detach().cpu()
+        mix = mix.detach().cpu()
+        estimate = estimate.detach().cpu()
+        target = target.detach().cpu()
+    elif isinstance(estimate, str):
+        mix = np.squeeze(sf.read(mix)[0])
+        estimate = np.squeeze(sf.read(estimate)[0])
+        target = np.squeeze(sf.read(target)[0])
+        xmax = 6.
+        mix = torch.stft(torch.from_numpy(mix[..., : int(xmax*sample_rate)]), **stft_kwargs)
+        estimate = torch.stft(torch.from_numpy(estimate[..., : int(xmax*sample_rate)]), **stft_kwargs)
+        target = torch.stft(torch.from_numpy(target[..., : int(xmax*sample_rate)]), **stft_kwargs)
 
     vmin, vmax = -60, 0
-    fac = .5
+    scale = max(mix.abs().max(), estimate.abs().max())
+
+    mix = .9 * mix / scale
+    estimate = .9 * estimate / scale
+    target = .9 * target / scale
 
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(24, 8))
 
@@ -36,34 +48,40 @@ def visualize_example(mix, estimate, target, idx_sample=0, epoch=0, name="", sam
     frames = hop_len/sample_rate * torch.arange(mix.size(-1))
 
     ax = axes.flat[0]
-    im = ax.pcolormesh(frames, freqs, 20*np.log10(fac*mix + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
+    im = ax.pcolormesh(frames, freqs, 20*np.log10(mix.abs() + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
     ax.set_xlabel('Time [s]')
     ax.set_ylabel('Frequency [Hz]')
-    ax.set_title('Mixed Speech')
+    ax.set_title(f'Mixed Speech [Scale={scale:.2f}]')
 
     freqs = sample_rate/(2*estimate.size(-2)) * torch.arange(estimate.size(-2))
     frames = hop_len/sample_rate * torch.arange(estimate.size(-1))
 
     ax = axes.flat[1]
-    ax.pcolormesh(frames, freqs, 20*np.log10(fac*estimate + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
+    ax.pcolormesh(frames, freqs, 20*np.log10(estimate.abs() + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
     ax.set_xlabel('Time [s]')
     ax.set_ylabel('Frequency [Hz]')
-    ax.set_title('Anechoic estimate')
+    ax.set_title(f'Estimate [Scale={scale:.2f}]')
 
     freqs = sample_rate/(2*target.size(-2)) * torch.arange(target.size(-2))
     frames = hop_len/sample_rate * torch.arange(target.size(-1))
 
     ax = axes.flat[2]
-    ax.pcolormesh(frames, freqs, 20*np.log10(fac*target + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
+    ax.pcolormesh(frames, freqs, 20*np.log10(target.abs() + EPS_graphics), vmin=vmin, vmax=vmax, shading="auto", cmap="magma")
     ax.set_xlabel('Time [s]')
     ax.set_ylabel('Frequency [Hz]')
-    ax.set_title('Anechoic target')
+    ax.set_title(f'Clean [Scale={scale:.2f}]')
 
     fig.subplots_adjust(right=0.87)
     cbar_ax = fig.add_axes([0.9, 0.25, 0.005, 0.5])
     fig.colorbar(im, cax=cbar_ax)
 
-    return fig
+    if return_fig:
+        plt.close()
+        return fig
+    else:
+        assert spec_path is not None
+        plt.savefig(os.path.join(spec_path, name + ".png"), dpi=300, bbox_inches="tight")
+        plt.close()
 
 
 
@@ -76,15 +94,15 @@ def visualize_one(estimate, spec_path=None, name="", sample_rate=16000, hop_len=
 
     if isinstance(estimate, torch.Tensor):
         estimate = torch.abs(estimate).squeeze().detach().cpu()
-    elif type(estimate) == str:
+    elif isinstance(estimate, str):
         estimate = np.squeeze(sf.read(estimate)[0])
-        norm_factor = 0.1/np.max(np.abs(estimate))
-        xmax = 6
-        estimate = estimate[..., : xmax*sample_rate]
-        # estimate = estimate[..., 16500: 16500+50000]
-        estimate = torch.stft(torch.from_numpy(norm_factor*estimate), **stft_kwargs)
+        xmax = 6.
+        estimate = estimate[..., : int(xmax*sample_rate)]
+        estimate = torch.stft(torch.from_numpy(estimate), **stft_kwargs)
 
     vmin, vmax = -60, 0
+    scale = estimate.abs().max()
+    estimate = .9 * estimate / scale
 
     freqs = sample_rate/(2*estimate.size(-2)) * torch.arange(estimate.size(-2))
     frames = hop_len/sample_rate * torch.arange(estimate.size(-1))
@@ -100,7 +118,7 @@ def visualize_one(estimate, spec_path=None, name="", sample_rate=16000, hop_len=
     else:
         plt.xlabel('Time [s]')
         plt.ylabel('Frequency [Hz]')
-        plt.title('Anechoic estimate')
+        plt.title(f'Estimate [Scale={scale:.2f}]')
         cbar_ax = fig.add_axes([0.93, 0.25, 0.03, 0.4])
         fig.colorbar(im, cax=cbar_ax)
 
@@ -177,3 +195,9 @@ def error_line(error_y_mode='band', **kwargs):
             reordered_data.append(fig.data[i])
         fig.data = tuple(reordered_data)
     return fig
+
+
+if __name__ == "__main__":
+
+    visualize_example(*3*["/data3/lemercier/databases/wsj0_derev_with_rir/audio/tt/clean/444c0204_327_t60=0.50.wav"], return_fig=False, spec_path=".", name="test")
+    # visualize_one("/data3/lemercier/databases/wsj0_derev_with_rir/audio/tt/clean/444c0204_327_t60=0.50.wav", raw=False, return_fig=False, spec_path=".", name="test")

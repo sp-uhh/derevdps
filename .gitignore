@@ -2,3 +2,11 @@ baseline_kodrasi
 results
 .logs
 .slurm
+__pycache__
+sgmse/__pycache__
+preprocessing/__pycache__
+sgmse/backbones/__pycache__
+sgmse/backbones/ncsnpp_utils/__pycache__
+sgmse/backbones/ncsnpp_utils/op/__pycache__
+sgmse/sampling/__pycache__
+sgmse/util/__pycache__

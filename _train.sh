@@ -97,8 +97,6 @@ srun -K1 -u python3 train.py \
 
 
 
-base_dir="/data3/lemercier/databases/vctk_56spk/audio"
-format="vctk"
 
 # VCTK Song Scale Factor = 0.1
 srun -K1 -u python3 train.py \
@@ -136,7 +134,7 @@ srun -K1 -u python3 train.py \
     --sigma_min 0.00001 \
     --sigma_max 150
 
-# WSJ0 EDM Scale Factor = 0.1
+# VCTK EDM Scale Factor = 0.1
 srun -K1 -u python3 train.py \
     --mode score-only \
     --backbone_score ncsnpp \
