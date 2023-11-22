@@ -4,11 +4,11 @@ pc=sppc1
 
 if [ "$pc" = sppc1 ]; then
     data_dir=/data/lemercier/databases
-    home_dir=/data1/lemercier
-elif [ "$pc" = spgpu1 ]; then
-    data_dir=/data/lemercier/databases
     home_dir=/export/home/lemercier
 elif [ "$pc" = spgpu1 ]; then
+    data_dir=/data/lemercier/databases
+    home_dir=/data1/lemercier
+elif [ "$pc" = spgpu2 ]; then
     data_dir=/data3/lemercier/databases
     home_dir=/export/home/lemercier
 fi;
@@ -62,22 +62,32 @@ clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
 rir_dir="$data_dir/wsj0_derev_with_rir/rir/tt"
 n=2
 
-N=50
+N=200
 scheduler="edm"
-zeta=60
+# zeta=0.3
+zeta=7
+# zeta=1000
 r=0.4
 alpha=1
 beta=0.1
 pre="karras"
 sde="edm"
 
-zeta_schedule="saw-tooth-increase"
+# zeta_schedule="constant"
+zeta_schedule="div-sig"
+# zeta_schedule="saw-tooth-increase"
+
 sampler_type="karras"
-predictor="euler-maruyama"
-# predictor="euler-heun"
+
+# predictor="euler-maruyama"
+predictor="euler-heun"
+# predictor="euler-heun-dps"
+
 corrector="none"
 # corrector="ald"
+
 posterior="dps"
+# posterior="none"
 
 ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
 

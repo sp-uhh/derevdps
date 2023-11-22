@@ -13,6 +13,7 @@ from sgmse.sdes import SDERegistry
 from sgmse.sampling import PredictorRegistry, CorrectorRegistry, OperatorRegistry, PosteriorRegistry, SchedulerRegistry, PosteriorRegistry
 from sgmse.model import ScoreModel
 from preprocessing import kernel as ker
+import gc
 
 from sgmse.util.other import *
 
@@ -127,5 +128,8 @@ for i, f in tqdm.tqdm(enumerate(files), total=len(files)):
         corrector=args.corrector, corrector_steps=args.corrector_steps, r=args.r, 
         posterior=args.posterior, operator=operator, A=A,  zeta=zeta, zeta_schedule=zeta_schedule, sw=args.sw,
         **other_kwargs)
-
+    
     save(f'{args.enhanced_dir}/{os.path.basename(f)}', x_hat.type(torch.float32).cpu().squeeze().unsqueeze(0), model_sr)
+
+    y = None
+    x_hat = None

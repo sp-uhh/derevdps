@@ -193,7 +193,7 @@ class ScoreModel(pl.LightningModule):
             scale = sigma
         if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             sigma = self.sde._std(t).squeeze()
-            scale = sigma * self.sigma_data / torch.sqrt( self.sigma_data**2 + sigma**2)
+            scale = sigma * self.sigma_data / torch.sqrt(self.sigma_data**2 + sigma**2)
         if scale.ndim and scale.ndim < dnn_output.ndim:
             scale = scale.view(scale.size(0), *(1,)*(dnn_output.ndim - scale.ndim))
 
@@ -213,10 +213,8 @@ class ScoreModel(pl.LightningModule):
     def preconditioning_loss(self, loss, sigma):
         if self.preconditioning == "song":
             weight = 1. / sigma**2
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             weight = (sigma**2 + self.sigma_data**2) / (sigma + self.sigma_data)**2
-        if self.preconditioning == "karras_eloi":
-            weight = 1.
 
         return weight * loss
 
@@ -228,7 +226,7 @@ class ScoreModel(pl.LightningModule):
             log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
             sigma = self.t_eps + torch.exp(log_sigma)
             t = sigma #identity in EDM SDE
-        if self.preconditioning == "karras_eloi":
+        if self.preconditioning == "karras_eloi": #Use the same sampling scheme as during reverse process
             a = torch.rand(x.shape[0], device=x.device)
             sigma = (self.sde.sigma_max**(1/self.sde.rho) + a*(self.sde.sigma_min**(1/self.sde.rho) - self.sde.sigma_max**(1/self.sde.rho)))**self.sde.rho
             t = sigma #identity in EDM SDE
