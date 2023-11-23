@@ -14,6 +14,7 @@ import torchaudio
 from pesq import pesq
 from pystoi import stoi
 from glob import glob
+import shutil
 
 from sgmse import sampling
 from sgmse.sdes import SDERegistry, VESDE, EDM
@@ -21,6 +22,7 @@ from sgmse.backbones import BackboneRegistry
 from sgmse.util.graphics import visualize_example, visualize_one, plot_loss_by_sigma
 from sgmse.util.other import pad_spec, pad_time, si_sdr
 from sgmse.util.train_utils import SigmaLossLogger
+from sgmse.util.fad import FAD
 from sgmse.sampling.schedulers import VESongScheduler, EDMScheduler
 from sgmse.sampling.operators import ReverberationOperator
 
@@ -352,6 +354,10 @@ class ScoreModel(pl.LightningModule):
         figures = []
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
 
+            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/generated"))
+            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/gt"))
+            gt_files = sorted(glob(os.path.join(self.testset_dir, "audio", "tt", "clean", "*.wav")))
+
             for idx in range(self.num_unconditional_files):
                 reference_tensor = torch.zeros(1, int(_len_generation*self.data_module.sample_rate))
                 x_hat = self.unconditional_sampling(reference_tensor, **kwargs).squeeze()
@@ -363,6 +369,14 @@ class ScoreModel(pl.LightningModule):
                     torch.abs(x_hat_stft), return_fig=True))
                 self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/UnconditionalSpec", figures)
             
+                torchaudio.save(os.path.join(self.logger.log_dir, ".fad_cache", "generated", f"{idx}.wav"), (x_hat / torch.max(torch.abs(x_hat))).type(torch.float32).cpu().squeeze().unsqueeze(0), self.data_module.sample_rate)
+                x, sr = torchaudio.load(gt_files[idx])
+                if sr != self.data_module.sample_rate:
+                    x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
+                torchaudio.save(os.path.join(self.logger.log_dir, ".fad_cache", "gt", f"{idx}.wav"), (x / torch.max(torch.abs(x))), self.data_module.sample_rate)
+
+            self.log_fad()
+
     def run_supervised_enhancement(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
         # Evaluate speech enhancement performance, for conditional models such as SGMSE+ and StoRM
         x, y = batch
@@ -384,7 +398,7 @@ class ScoreModel(pl.LightningModule):
         corrector_name, r, corrector_steps,
         **kwargs):
 
-        sde = self.sde.copy()
+        sde = self.sde
         sde.N = N
         if self.data_module.return_time:
             linearization = lambda x: x
@@ -406,7 +420,7 @@ class ScoreModel(pl.LightningModule):
         noise_std, smin, smax, churn,
         **kwargs):
 
-        sde = self.sde.copy()
+        sde = self.sde
         sde.N = N
         if self.data_module.return_time:
             linearization = lambda x: x
@@ -573,6 +587,17 @@ class ScoreModel(pl.LightningModule):
         self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True)
         self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True)
         self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True)
+
+    def log_fad(self):
+        
+        gt_dir = os.path.join(self.logger.log_dir, ".fad_cache/gt")
+        generated_dir = os.path.join(self.logger.log_dir, ".fad_cache/generated")
+        _fad = FAD(gt_dir, generated_dir)
+        print(f"FAD at epoch {self.current_epoch} : {_fad:.2f}")
+        self.log('ValidationFAD', _fad, on_step=False, on_epoch=True)
+
+        shutil.rmtree(gt_dir)
+        shutil.rmtree(generated_dir)
 
     def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
 
