@@ -220,9 +220,31 @@ python3 train.py \
     --condition none \
     --sde ve \
     --preconditioning song \
-    --num_eval_files 10 \
-    --num_unconditional_files 25 \
+    --num_eval_files 2 \
+    --num_unconditional_files 2 \
     --sigma_min 0.01 \
     --sigma_max 1.5 \
+    --limit_train_batches 25 \
+    --limit_val_batches 10
+
+base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+format="wsj0"
+python3 train.py \
+    --backbone ncsnpp \
+    --format  $format \
+    --base_dir $base_dir \
+    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+    --batch_size 2 \
+    --gpus 1 \
+    --spec_abs_exponent 1. \
+    --spec_factor 0.1 \
+    --condition none \
+    --sde edm \
+    --preconditioning karras \
+    --num_eval_files 2 \
+    --num_unconditional_files 2 \
+    --sigma_min 0.01 \
+    --sigma_max 1.5 \
+    --sigma_data 0.17 \
     --limit_train_batches 25 \
     --limit_val_batches 10

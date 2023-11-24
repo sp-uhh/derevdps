@@ -560,9 +560,9 @@ class ScoreModel(pl.LightningModule):
     
     def log_metrics(self, x, y, x_hat, _max_vis_samples=10):
 
-        _si_sdr, _pesq, _estoi = np.zeros((_max_vis_samples,)), np.zeros((_max_vis_samples,)), np.zeros((_max_vis_samples,))
+        _si_sdr, _pesq, _estoi = np.zeros((min(len(x), _max_vis_samples),)), np.zeros((min(len(x), _max_vis_samples),)), np.zeros((min(len(x), _max_vis_samples),))
 
-        for i in range(x.size(0)):
+        for i in range(min(len(x), _max_vis_samples)):
             _si_sdr[i] = si_sdr(x[i], x_hat[i])
             if self.data_module.sample_rate == 16000:
                 x_resampled = x[i].cpu().numpy()
@@ -592,17 +592,17 @@ class ScoreModel(pl.LightningModule):
     def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
 
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
-            for idx, (x, y, x_hat) in enumerate(zip(x, y, x_hat)):
+            for i in range(min(len(x), _max_vis_samples)):
                 if self.current_epoch == 0:
-                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{idx}", (x / torch.max(x)).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
-                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{idx}", (y / torch.max(torch.abs(y))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
-                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{idx}", (x_hat / torch.max(torch.abs(x_hat))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Clean/{i}", (x[i] / torch.max(x[i])).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                    self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Mix/{i}", (y[i] / torch.max(torch.abs(y[i]))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
+                self.logger.experiment.add_audio(f"Epoch={self.current_epoch} Estimate/{i}", (x_hat[i] / torch.max(torch.abs(x_hat[i]))).unsqueeze(-1), sample_rate=self.data_module.sample_rate, global_step=self.current_epoch)
 
     def log_spec(self, x, y, x_hat, _max_vis_samples=10, _vis_epochs=10):
 
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
             figures = []
-            for i in range(_max_vis_samples):
+            for i in range(min(len(x), _max_vis_samples)):
                 figures.append(
                     visualize_example(
                     torch.abs(self._stft(y[i])), 
