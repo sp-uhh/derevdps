@@ -25,12 +25,16 @@ class SDE(abc.ABC):
         """
         super().__init__()
         self.N = N
+        self.T = 1.
 
-    @property
-    @abc.abstractmethod
-    def T(self):
-        """End time of the SDE."""
-        pass
+    def set_T(self, T=1.):
+        self.T = T
+
+    # @property
+    # @abc.abstractmethod
+    # def T(self):
+    #     """End time of the SDE."""
+    #     pass
 
     @abc.abstractmethod
     def sde(self, x, t, *args, **kwargs):
@@ -158,10 +162,10 @@ class VESDE(SDE):
     def copy(self):
         return VESDE(self.sigma_min, self.sigma_max, N=self.N)
 
-    @property
-    def T(self):
-        return 1
-
+    # @property
+    # def T(self):
+    #     return 1
+    
     def sde(self, x, t, *args, **kwargs):
         sigma = torch.sqrt(t)
         diffusion = sigma * np.sqrt(2 * self.logsig)
@@ -231,9 +235,9 @@ class EDM(SDE):
     def copy(self):
         return EDM(N=self.N, sigma_min=self.sigma_min, sigma_max=self.sigma_max, rho=self.rho)
 
-    @property
-    def T(self):
-        return 1
+    # @property
+    # def T(self):
+    #     return 1
 
     def sde(self, x, t, *args, **kwargs):
         diffusion = torch.sqrt(2 * t)

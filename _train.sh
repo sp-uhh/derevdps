@@ -21,8 +21,7 @@ format="wsj0"
 
 # WSJ0 Song Scale Factor = 0.1
 srun -K1 -u python3 train.py \
-    --mode score-only \
-    --backbone_score ncsnpp \
+    --backbone ncsnpp \
     --format  $format \
     --base_dir $base_dir \
     --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \

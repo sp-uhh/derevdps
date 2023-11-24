@@ -47,7 +47,7 @@ fi;
 #     --num_unconditional_files 5 \
 #     --sigma_min 0.00001 \
 #     --sigma_max 17 \
-#     --resume_from_checkpoint $home_dir/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_2/checkpoints/last.ckpt
+#     --resume_from_checkpoint $home_dir/code/_public_repos/derevdps/.logs/sde=VESDE_backbone=ncsnpp_data=wsj0_ch=1/version_2/checkpoints/last.ckpt
 
 
 
