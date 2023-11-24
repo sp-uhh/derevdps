@@ -103,8 +103,8 @@ class EulerHeunDPSPredictor(Predictor):
         x_0_hat=self.tweedie_from_score(score, x, t)
 
         measurement_linear, x_0_hat_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_0_hat.squeeze(0)).unsqueeze(0)
-        self.operator.load_weights(A)
-        measurement_estimated = self.operator.forward(x_0_hat_linear.squeeze(0)).unsqueeze(0)
+        self.operator.load_weights(A.squeeze(0))
+        measurement_estimated = self.operator.forward(x_0_hat_linear)
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]

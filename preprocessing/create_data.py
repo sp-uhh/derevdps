@@ -17,6 +17,7 @@ import scipy.signal as ss
 import io 
 import scipy.io.wavfile 
 import pyroomacoustics as pra
+import torchaudio, torch
 
 from utils import obtain_noise_file
 
@@ -36,6 +37,7 @@ assert ROOT != "", "You need to have a root databases directory"
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--speech', type=str, choices=["vctk", "wsj0", "dns", "timit"], default="wsj0", help='Clean speech')
+parser.add_argument('--task', type=str, choices=["derev"], default="derev", help='Task')
 parser.add_argument('--sr', type=int, default=16000)
 parser.add_argument('--splits', type=str, default="cv,tr,tt", help='Split folders of the dataset')
 parser.add_argument('--save-rir', type=bool, default=True)
@@ -105,7 +107,8 @@ for i_split, split in enumerate(splits):
 
         speech_basename = os.path.basename(speech_list[i_sample])
         speech, sr = sf.read(speech_list[i_sample])
-        assert sr == args.sr, "Obtained an unexpected Sampling rate"
+        if sr != args.sr:
+            speech = torchaudio.transforms.Resample(orig_freq=sr, new_freq=args.sr)(torch.from_numpy(speech).type(torch.float32)).numpy()
         original_scale = np.max(np.abs(speech))
 
         lossy_speech = speech.copy()

@@ -295,18 +295,18 @@ class ScoreModel(pl.LightningModule):
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
         if isinstance(self.sde, VESDE):
-            kwargs = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True)
+            kwargs_posterior = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True, zeta=7., zeta_schedule="div-sig")
+            kwargs_unconditional = kwargs_posterior
         if isinstance(self.sde, EDM):
-            kwargs = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
+            kwargs_posterior = dict(sampler_type="karras", predictor="euler-heun-dps", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True, zeta=7., zeta_schedule="div-sig")
+            kwargs_unconditional = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
 
         if batch_idx == 0:
             if hasattr(self, "testset_dir") and self.testset_dir is not None:
                 # Inverse problem evaluation
-                self.train(mode=True)
-                self.run_posterior_sampling(**kwargs)
+                self.run_posterior_sampling(**kwargs_posterior)
             # Unconditional sampling
-            self.eval()
-            self.run_unconditional_sampling(**kwargs)
+            self.run_unconditional_sampling(**kwargs_unconditional)
 
         return loss
     
@@ -333,29 +333,24 @@ class ScoreModel(pl.LightningModule):
                 y = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(y)
                 x = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
 
-            try: #Lazy solution for now: just give perfect scores
-                x_hat = self.enhance(y, operator=operator, A=A, **kwargs)
-            except RuntimeError:
-                x_hat = x + .1*torch.rand_like(x)
+            x_hat = self.enhance(y, operator=operator, A=A, **kwargs)
 
-            x_list.append(x)
-            y_list.append(y)
-            x_hat_list.append(x_hat)
+            x_list.append(x.squeeze())
+            y_list.append(y.squeeze())
+            x_hat_list.append(x_hat.squeeze())
         
-        x = torch.stack(x_list).squeeze()
-        y = torch.stack(y_list).squeeze()
-        x_hat = torch.stack(x_hat_list).squeeze()
-
-        self.log_metrics(x, y, x_hat, _max_vis_samples=_max_vis_samples)
-        self.log_audio(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
-        self.log_spec(x, y, x_hat, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
+        self.log_metrics(x_list, y_list, x_hat_list, _max_vis_samples=_max_vis_samples)
+        self.log_audio(x_list, y_list, x_hat_list, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
+        self.log_spec(x_list, y_list, x_hat_list, _max_vis_samples=_max_vis_samples, _vis_epochs=_vis_epochs)
 
     def run_unconditional_sampling(self, _len_generation=5., _max_vis_samples=10, _vis_epochs=10, **kwargs):
         figures = []
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
 
-            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/generated"))
-            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/gt"))
+            gt_dir = os.path.join(self.logger.log_dir, ".fad_cache/gt")
+            generated_dir = os.path.join(self.logger.log_dir, ".fad_cache/generated")
+            os.makedirs(gt_dir, exist_ok=True)
+            os.makedirs(generated_dir, exist_ok=True)
             gt_files = sorted(glob(os.path.join(self.testset_dir, "audio", "tt", "clean", "*.wav")))
 
             for idx in range(self.num_unconditional_files):
@@ -375,7 +370,7 @@ class ScoreModel(pl.LightningModule):
                     x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
                 torchaudio.save(os.path.join(self.logger.log_dir, ".fad_cache", "gt", f"{idx}.wav"), (x / torch.max(torch.abs(x))), self.data_module.sample_rate)
 
-            self.log_fad()
+            self.log_fad(gt_dir, generated_dir)
 
     def run_supervised_enhancement(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
         # Evaluate speech enhancement performance, for conditional models such as SGMSE+ and StoRM
@@ -570,14 +565,14 @@ class ScoreModel(pl.LightningModule):
         for i in range(x.size(0)):
             _si_sdr[i] = si_sdr(x[i], x_hat[i])
             if self.data_module.sample_rate == 16000:
-                x_resampled = x.cpu().numpy()
-                x_hat_resampled = x_hat.cpu().numpy()
+                x_resampled = x[i].cpu().numpy()
+                x_hat_resampled = x_hat[i].cpu().numpy()
             else:
                 print("Not 16kHz. Resampling to 16kHz for PESQ and (E)STOI")
-                x_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x).cpu().numpy()
-                x_hat_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x_hat).cpu().numpy()
-            _pesq[i] = pesq(16000, x_resampled[i], x_hat_resampled[i], 'wb') 
-            _estoi[i] = stoi(x_resampled[i], x_hat_resampled[i], 16000, extended=True)
+                x_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x[i]).cpu().numpy()
+                x_hat_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x_hat[i]).cpu().numpy()
+            _pesq[i] = pesq(16000, x_resampled, x_hat_resampled, 'wb') 
+            _estoi[i] = stoi(x_resampled, x_hat_resampled, 16000, extended=True)
 
         print(f"PESQ at epoch {self.current_epoch} : {_pesq.mean():.2f}")
         print(f"SISDR at epoch {self.current_epoch} : {_si_sdr.mean():.1f}")
@@ -588,16 +583,11 @@ class ScoreModel(pl.LightningModule):
         self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True)
         self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True)
 
-    def log_fad(self):
+    def log_fad(self, gt_dir, generated_dir):
         
-        gt_dir = os.path.join(self.logger.log_dir, ".fad_cache/gt")
-        generated_dir = os.path.join(self.logger.log_dir, ".fad_cache/generated")
         _fad = FAD(gt_dir, generated_dir)
         print(f"FAD at epoch {self.current_epoch} : {_fad:.2f}")
         self.log('ValidationFAD', _fad, on_step=False, on_epoch=True)
-
-        shutil.rmtree(gt_dir)
-        shutil.rmtree(generated_dir)
 
     def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
 
@@ -610,14 +600,12 @@ class ScoreModel(pl.LightningModule):
 
     def log_spec(self, x, y, x_hat, _max_vis_samples=10, _vis_epochs=10):
 
-        x_stft, y_stft, x_hat_stft = self._stft(x[: _max_vis_samples]), self._stft(y[: _max_vis_samples]), self._stft(x_hat[: _max_vis_samples])
-
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
             figures = []
-            for idx, (X, Y, X_hat) in enumerate(zip(x_stft, y_stft, x_hat_stft)):
+            for i in range(_max_vis_samples):
                 figures.append(
                     visualize_example(
-                    torch.abs(Y), 
-                    torch.abs(X_hat), 
-                    torch.abs(X), return_fig=True))
+                    torch.abs(self._stft(y[i])), 
+                    torch.abs(self._stft(x_hat[i])), 
+                    torch.abs(self._stft(x[i])), return_fig=True))
             self.logger.experiment.add_figure(f"Epoch={self.current_epoch}/Spec", figures)
