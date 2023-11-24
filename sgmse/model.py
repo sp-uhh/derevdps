@@ -295,7 +295,7 @@ class ScoreModel(pl.LightningModule):
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
         if isinstance(self.sde, VESDE):
-            kwargs = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True)
+            kwargs = dict(sampler_type="song", predictor="euler-maruyama", corrector="none", scheduler="ve", probability_flow=True)
         if isinstance(self.sde, EDM):
             kwargs = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
 
@@ -354,8 +354,10 @@ class ScoreModel(pl.LightningModule):
         figures = []
         if self.current_epoch%_vis_epochs==0 and _max_vis_samples and self.logger is not None:
 
-            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/generated"))
-            os.makedirs(os.path.join(self.logger.log_dir, ".fad_cache/gt"))
+            gt_dir = os.path.join(self.logger.log_dir, ".fad_cache/gt")
+            generated_dir = os.path.join(self.logger.log_dir, ".fad_cache/generated")
+            os.makedirs(gt_dir, exist_ok=True)
+            os.makedirs(generated_dir, exist_ok=True)
             gt_files = sorted(glob(os.path.join(self.testset_dir, "audio", "tt", "clean", "*.wav")))
 
             for idx in range(self.num_unconditional_files):
@@ -375,7 +377,9 @@ class ScoreModel(pl.LightningModule):
                     x = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
                 torchaudio.save(os.path.join(self.logger.log_dir, ".fad_cache", "gt", f"{idx}.wav"), (x / torch.max(torch.abs(x))), self.data_module.sample_rate)
 
-            self.log_fad()
+            self.log_fad(gt_dir, generated_dir)
+            # shutil.rmtree(gt_dir)
+            # shutil.rmtree(generated_dir)
 
     def run_supervised_enhancement(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
         # Evaluate speech enhancement performance, for conditional models such as SGMSE+ and StoRM
@@ -584,20 +588,15 @@ class ScoreModel(pl.LightningModule):
         print(f"ESTOI at epoch {self.current_epoch} : {_estoi.mean():.2f}")
         print('__________________________________________________________________')
         
-        self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True)
-        self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True)
-        self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True)
+        self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True, sync_dist=True)
+        self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True, sync_dist=True)
+        self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True, sync_dist=True)
 
-    def log_fad(self):
+    def log_fad(self, gt_dir, generated_dir):
         
-        gt_dir = os.path.join(self.logger.log_dir, ".fad_cache/gt")
-        generated_dir = os.path.join(self.logger.log_dir, ".fad_cache/generated")
         _fad = FAD(gt_dir, generated_dir)
         print(f"FAD at epoch {self.current_epoch} : {_fad:.2f}")
-        self.log('ValidationFAD', _fad, on_step=False, on_epoch=True)
-
-        shutil.rmtree(gt_dir)
-        shutil.rmtree(generated_dir)
+        self.log('ValidationFAD', _fad, on_step=False, on_epoch=True, sync_dist=True)
 
     def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
 
