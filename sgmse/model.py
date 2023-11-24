@@ -277,7 +277,7 @@ class ScoreModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx)
-        self.log('train_loss', loss, on_step=True, on_epoch=True, batch_size=self.data_module.batch_size)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, batch_size=self.data_module.batch_size, sync_dist=True)
         # if (batch_idx + 1) % 100 == 0:
         if batch_idx % 100 == 0:
             self.log_loss_sigma()
@@ -292,7 +292,7 @@ class ScoreModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx)
-        self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
+        self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size, sync_dist=True)
 
         if isinstance(self.sde, VESDE):
             kwargs_posterior = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True, zeta=7., zeta_schedule="div-sig")
@@ -579,15 +579,15 @@ class ScoreModel(pl.LightningModule):
         print(f"ESTOI at epoch {self.current_epoch} : {_estoi.mean():.2f}")
         print('__________________________________________________________________')
         
-        self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True)
-        self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True)
-        self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True)
+        self.log('ValidationPESQ', _pesq.mean(), on_step=False, on_epoch=True, sync_dist=True)
+        self.log('ValidationSISDR', _si_sdr.mean(), on_step=False, on_epoch=True, sync_dist=True)
+        self.log('ValidationESTOI', _estoi.mean(), on_step=False, on_epoch=True, sync_dist=True)
 
     def log_fad(self, gt_dir, generated_dir):
         
         _fad = FAD(gt_dir, generated_dir)
         print(f"FAD at epoch {self.current_epoch} : {_fad:.2f}")
-        self.log('ValidationFAD', _fad, on_step=False, on_epoch=True)
+        self.log('ValidationFAD', _fad, on_step=False, on_epoch=True, sync_dist=True)
 
     def log_audio(self, x, y, x_hat, _max_vis_samples, _vis_epochs):
 
