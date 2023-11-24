@@ -60,7 +60,7 @@ def pick_zeta_schedule(schedule, t, zeta, clip=50_000):
 
 
 def get_song_sampler(
-    predictor_name = "euler-maruyama", scheduler_name = "ve-song", sde = "ve", score_fn = None, sde_input = None, 
+    predictor_name = "euler-maruyama", scheduler_name = "ve-song", sde = None, score_fn = None, sde_input = None, 
     eps = 3e-2, probability_flow = True,  conditioning = "none",
     posterior_name = "none", operator = "none", measurement = None, A = None, zeta = 50, zeta_schedule = "lin-increase", linearization = None,
     corrector_name = "ald", r = .5, corrector_steps = 1, denoise = True,
@@ -120,7 +120,8 @@ def get_song_sampler(
 
             # posterior
             if i < sde.N - 1:
-                xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                with torch.set_grad_enabled(grad_required):
+                    xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
                 xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
                 pbar.set_postfix({'distance': distance.item()}, refresh=False)
 
@@ -178,26 +179,26 @@ def get_karras_sampler(
         for i in pbar:
             z = noise_std * torch.randn_like(xt)
             gamma = min(churn/sde.N, np.sqrt(2)-1.) if (not(probability_flow) and timesteps[i] > smin and timesteps[i] < smax) else 0.
-            t_overnoised = timesteps[i]*(1 + gamma)
-            dt = timesteps[i+1] - t_overnoised # dt < 0 (time flowing in reverse)
+            t_overnoised = timesteps[i]*(1 + gamma) * torch.ones(sde_input.shape[0], device=sde_input.device)
             if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), zeta0)
+            dt = timesteps[i+1] - timesteps[i]*(1 + gamma) # dt < 0 (time flowing in reverse)
             if gamma > 0:
-                xt = xt + torch.sqrt(t_overnoised**2 - timesteps[i]**2) * torch.ones_like(xt) * z
+                xt = xt + timesteps[i] * torch.sqrt((1 + gamma)**2 - 1) * torch.ones_like(xt) * z
 
             # predictor
             grad_required = posterior.grad_required(timesteps[i].item(), **kwargs)
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 if predictor_name=="euler-heun-dps":
-                    xt, xt_mean, score, At, distance = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input,measurement=measurement, A=At, **kwargs)
+                    xt, xt_mean, score, At, distance = predictor.update_fn(xt, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input,measurement=measurement, A=At, **kwargs)
                 else:
-                    xt, xt_mean, score = predictor.update_fn(xt, t_overnoised * torch.ones(sde_input.shape[0], device=sde_input.device), dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
+                    xt, xt_mean, score = predictor.update_fn(xt, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
     
             # posterior
             if i < sde.N - 1 and predictor_name != "euler-heun-dps" and posterior.zeta > 0.:
-                t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
-                xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                with torch.set_grad_enabled(grad_required):
+                    xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
                 xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
             pbar.set_postfix({'distance': distance.item()}, refresh=False)
 

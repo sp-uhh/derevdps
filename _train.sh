@@ -206,8 +206,8 @@ srun -K1 -u python3 train.py \
 
 
 
-format=wsj0
 base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+format="wsj0"
 python3 train.py \
     --backbone ncsnpp \
     --format  $format \
@@ -220,9 +220,16 @@ python3 train.py \
     --condition none \
     --sde ve \
     --preconditioning song \
+<<<<<<< HEAD
     --num_eval_files 10 \
     --num_unconditional_files 25 \
     --sigma_min 0.01 \
     --sigma_max 1.5 \
+=======
+    --num_eval_files 2 \
+    --num_unconditional_files 2 \
+    --sigma_min 0.00001 \
+    --sigma_max 17 \
+>>>>>>> 890e35d0052810b49604829bdd6068acbbf1a9b2
     --limit_train_batches 25 \
     --limit_val_batches 10

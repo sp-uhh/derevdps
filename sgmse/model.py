@@ -295,18 +295,18 @@ class ScoreModel(pl.LightningModule):
         self.log('valid_loss', loss, on_step=False, on_epoch=True, batch_size=self.data_module.batch_size)
 
         if isinstance(self.sde, VESDE):
-            kwargs = dict(sampler_type="song", predictor="euler-maruyama", corrector="none", scheduler="ve", probability_flow=True)
+            kwargs_posterior = dict(sampler_type="song", predictor="euler-maruyama", scheduler="ve", probability_flow=True)
+            kwargs_unconditional = kwargs_posterior
         if isinstance(self.sde, EDM):
-            kwargs = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
+            kwargs_posterior = dict(sampler_type="karras", predictor="euler-heun-dps", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
+            kwargs_unconditional = dict(sampler_type="karras", predictor="euler-heun", corrector="none", scheduler="edm", noise_std=1, smin=0., smax=0., churn=0., probability_flow=True)
 
         if batch_idx == 0:
             if hasattr(self, "testset_dir") and self.testset_dir is not None:
                 # Inverse problem evaluation
-                self.train(mode=True)
-                self.run_posterior_sampling(**kwargs)
+                self.run_posterior_sampling(**kwargs_posterior)
             # Unconditional sampling
-            self.eval()
-            self.run_unconditional_sampling(**kwargs)
+            self.run_unconditional_sampling(**kwargs_unconditional)
 
         return loss
     
@@ -333,10 +333,7 @@ class ScoreModel(pl.LightningModule):
                 y = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(y)
                 x = torchaudio.utils.Resample(orig_freq=sr, new_freq=self.data_module.sample_rate)(x)
 
-            try: #Lazy solution for now: just give perfect scores
-                x_hat = self.enhance(y, operator=operator, A=A, **kwargs)
-            except RuntimeError:
-                x_hat = x + .1*torch.rand_like(x)
+            x_hat = self.enhance(y, operator=operator, A=A, **kwargs)
 
             x_list.append(x)
             y_list.append(y)
@@ -378,8 +375,6 @@ class ScoreModel(pl.LightningModule):
                 torchaudio.save(os.path.join(self.logger.log_dir, ".fad_cache", "gt", f"{idx}.wav"), (x / torch.max(torch.abs(x))), self.data_module.sample_rate)
 
             self.log_fad(gt_dir, generated_dir)
-            # shutil.rmtree(gt_dir)
-            # shutil.rmtree(generated_dir)
 
     def run_supervised_enhancement(self, batch, _max_vis_samples=10, _vis_epochs=10, **kwargs):
         # Evaluate speech enhancement performance, for conditional models such as SGMSE+ and StoRM
