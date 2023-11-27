@@ -214,7 +214,8 @@ class ScoreModel(pl.LightningModule):
 
     def preconditioning_loss(self, loss, sigma):
         if self.preconditioning == "song":
-            weight = 1. / sigma**2
+            # weight = 1. / sigma**2
+            weight = 1. # TMP Remove that for now and retry: it seems that the weighting using big sigmas really kills the network
         if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
             weight = (sigma**2 + self.sigma_data**2) / (sigma + self.sigma_data)**2
 
