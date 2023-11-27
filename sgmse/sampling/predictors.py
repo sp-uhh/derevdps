@@ -37,6 +37,7 @@ class Predictor(abc.ABC):
     def debug_update_fn(self, x, t, *args):
         raise NotImplementedError(f"Debug update function not implemented for predictor {self}.")
 
+    
 @PredictorRegistry.register('euler-maruyama')
 class EulerMaruyamaPredictor(Predictor):
     """

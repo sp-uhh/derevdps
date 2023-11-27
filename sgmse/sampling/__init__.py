@@ -11,6 +11,7 @@ from .correctors import Corrector, CorrectorRegistry
 from .posteriors import Posterior, PosteriorRegistry
 from .operators import LinearOperator, OperatorRegistry
 from .schedulers import Scheduler, SchedulerRegistry
+from .optimizers import get_optimizer
 
 __all__ = [
     'PredictorRegistry', 'CorrectorRegistry', 'PosteriorRegistry', 'OperatorRegistry', 'SchedulerRegistry'
@@ -212,3 +213,83 @@ def get_karras_sampler(
 
 
 
+def get_reddiff_sampler(
+    scheduler_name = "edm", sde = "edm", tweedie_fn = None, sde_input = None, 
+    conditioning = "none", 
+    operator = "none", measurement = None, A = None, zeta = 0.25, zeta_schedule = "lin-increase", linearization = None,
+    optimizer_name = "adam", lr = 0.1, stochastic_std = 1e-4,
+    **kwargs
+):
+    """Create a RED-Diff stochastic optimizer, as in:
+    
+    A VARIATIONAL PERSPECTIVE ON SOLVING INVERSE PROBLEMS WITH DIFFUSION MODELS
+    Morteza Mardani, Jiaming Song, Jan Kautz, Arash Vahdat
+    2023
+
+    Adapted from https://github.com/NVlabs/RED-diff/blob/master/algos/reddiff.py
+
+    Args:
+        sde: An `sdes.SDE` object representing the forward SDE.
+        score_fn: A function (typically learned model) that predicts the score.
+        y: A `torch.Tensor`, representing the (non-white-)noisy starting point(s) to condition the prior on.
+
+    Returns:
+        A sampling function that returns samples and the number of function evaluations during sampling.
+    """
+    scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
+    scheduler = scheduler_cls(eps=0., **sde.__dict__, **kwargs)
+    
+    def REDDiff_optimizer():
+        """The stochastic optimization function."""
+
+        x0 = torch.randn_like(measurement)
+        x0 = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
+        At = A
+
+        timesteps = scheduler.reverse_timesteps(sde.T).to(x0.device)
+        pbar = tqdm.tqdm(list(range(sde.N)))
+        mu = torch.autograd.Variable(x0, requires_grad=True)
+        optimizer = get_optimizer(optimizer_name, params=[mu], lr=lr)
+
+        for i in pbar:
+
+            # Slightly perturb curent prediction (why? Not in the paper? Check)
+            z0 = torch.randn_like(mu)
+            mu_perturbed = mu + stochastic_std * z0
+
+            # Tweedie estimation
+            t = timesteps[i] * torch.ones(sde_input.shape[0], device=sde_input.device)
+            mean, std = sde.marginal_prob(mu_perturbed, t, sde_input)
+            z = torch.randn_like(mu_perturbed)
+            if std.ndim < mu_perturbed.ndim:
+                std = std.view(*std.size(), *((1,)*(mu_perturbed.ndim - std.ndim)))
+            sigma = std
+            xt = mean + sigma * z
+            tweedie = tweedie_fn(xt, t, conditioning).detach()
+    
+            # posterior observation loss
+            measurement_linear = linearization(measurement.squeeze(0)).unsqueeze(0)
+            mu_perturbed_linear = linearization(mu_perturbed.squeeze(0)).unsqueeze(0)
+            operator.load_weights(At.squeeze(0))
+            measurement_estimated_linear = operator.forward(mu_perturbed_linear)
+            loss_obs = (measurement_linear - measurement_estimated_linear).abs().square().mean() / 2
+
+            # RED score matching regularization (using the Tweedie-wise eq. 10 rather than the score-wise eq. 9)
+            loss_score = torch.mul((tweedie - mu_perturbed).detach(), mu_perturbed).mean()
+
+            # Weight losses and optimizer step
+            loss = loss_obs + zeta * loss_score
+
+            # Optimizer step
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Log distance to measurement in the same fashion as other samplers
+            pbar.set_postfix({'distance': torch.linalg.norm(measurement_linear - measurement_estimated_linear).item()}, refresh=False)
+
+        x_result = xt
+        ns = sde.N
+        return x_result, ns, At, loss_obs
+    
+    return REDDiff_optimizer

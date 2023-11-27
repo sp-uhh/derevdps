@@ -57,6 +57,63 @@ fi;
 ### UNIFY XP ###
 ################
 
+# test_dir="$data_dir/wsj0_derev_with_rir/audio/tt/noisy"
+# clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
+# rir_dir="$data_dir/wsj0_derev_with_rir/rir/tt"
+# n=2
+
+# N=200
+# scheduler="edm"
+# # zeta=0.3
+# zeta=7
+# # zeta=1000
+# r=0.4
+# alpha=1
+# beta=0.1
+# pre="karras"
+# sde="edm"
+
+# # zeta_schedule="constant"
+# zeta_schedule="div-sig"
+# # zeta_schedule="saw-tooth-increase"
+
+# sampler_type="karras"
+
+# # predictor="euler-maruyama"
+# predictor="euler-heun"
+# # predictor="euler-heun-dps"
+
+# corrector="none"
+# # corrector="ald"
+
+# posterior="dps"
+# # posterior="none"
+
+# ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
+
+# python3 enhancement.py \
+#     --test_dir $test_dir --rir_dir $rir_dir \
+#     --N $N --n $n --sampler_type $sampler_type --scheduler $scheduler \
+#     --predictor $predictor \
+#     --corrector $corrector --r $r \
+#     --posterior $posterior --operator reverberation --zeta $zeta --zeta_schedule $zeta_schedule \
+#     --ckpt $ckpt_score \
+#     --enhanced_dir .exp/.posterior/prior=0_${sampler_type}_sde=${sde}_pre=${pre}_alpha=${alpha}_beta=${beta}_N=${N}_pred=${predictor}_corr=${corrector}_r=${r}_sched=${scheduler}_post=${posterior}_zeta=${zeta}_zsched=${zeta_schedule}
+
+
+
+
+
+
+
+
+
+
+
+#####################
+### Test RED-Diff ###
+#####################
+
 test_dir="$data_dir/wsj0_derev_with_rir/audio/tt/noisy"
 clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
 rir_dir="$data_dir/wsj0_derev_with_rir/rir/tt"
@@ -64,30 +121,20 @@ n=2
 
 N=200
 scheduler="edm"
-# zeta=0.3
-zeta=7
-# zeta=1000
+zeta=0.25
+zeta_schedule="none"
 r=0.4
 alpha=1
 beta=0.1
 pre="karras"
 sde="edm"
 
-# zeta_schedule="constant"
-zeta_schedule="div-sig"
-# zeta_schedule="saw-tooth-increase"
-
-sampler_type="karras"
-
-# predictor="euler-maruyama"
-predictor="euler-heun"
-# predictor="euler-heun-dps"
-
+sampler_type="red-diff"
+lr=1e-1
+optimizer="adam"
+predictor="none"
 corrector="none"
-# corrector="ald"
-
-posterior="dps"
-# posterior="none"
+posterior="none"
 
 ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
 
@@ -97,5 +144,6 @@ python3 enhancement.py \
     --predictor $predictor \
     --corrector $corrector --r $r \
     --posterior $posterior --operator reverberation --zeta $zeta --zeta_schedule $zeta_schedule \
+    --optimizer $optimizer --lr $lr \
     --ckpt $ckpt_score \
-    --enhanced_dir .exp/.posterior/prior=0_${sampler_type}_sde=${sde}_pre=${pre}_alpha=${alpha}_beta=${beta}_N=${N}_pred=${predictor}_corr=${corrector}_r=${r}_sched=${scheduler}_post=${posterior}_zeta=${zeta}_zsched=${zeta_schedule}
+    --enhanced_dir .exp/.posterior/prior=0_${sampler_type}_sde=${sde}_pre=${pre}_alpha=${alpha}_beta=${beta}_N=${N}_zeta=${zeta}_optimizer=${optimizer}_lr=${lr}
