@@ -96,7 +96,7 @@ fi;
 #     --backbone ncsnpp \
 #     --format  $format \
 #     --base_dir $base_dir \
-#     --testset_dir $data_dir/wsj0_derev_with_rir \
+#     --testset_dir $data_dir/vctk_derev_with_rir \
 #     --batch_size 16 \
 #     --gpus 1 \
 #     --spec_abs_exponent 1. \
@@ -108,7 +108,8 @@ fi;
 #     --num_unconditional_files 25 \
 #     --sigma_min 0.00001 \
 #     --sigma_max 1.5 \
-#     --sigma_data 0.17
+#     --sigma_data 0.17 \
+#     --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_9/checkpoints/last.ckpt
 
 # VCTK EDM Scale Factor = 1 (comparison Eloi)
 base_dir="$data_dir/vctk_56spk/audio"
@@ -129,4 +130,29 @@ srun -K1 -u python3 train.py \
     --num_unconditional_files 25 \
     --sigma_min 0.00001 \
     --sigma_max 150 \
-    --sigma_data 1.7
+    --sigma_data 1.7 \
+    --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_12/checkpoints/last.ckpt
+    
+# # VCTK EDM Scale Factor = 0.1
+# base_dir="$data_dir/vctk_56spk/audio"
+# format="vctk"
+# srun -K1 -u python3 train.py \
+#     --backbone ncsnpp \
+#     --format  $format \
+#     --base_dir $base_dir \
+#     --testset_dir $data_dir/vctk_derev_with_rir \
+#     --batch_size 16 \
+#     --gpus 1 \
+#     --spec_abs_exponent 1. \
+#     --spec_factor 0.1 \
+#     --condition none \
+#     --sde edm \
+#     --preconditioning karras_eloi \
+#     --num_eval_files 10 \
+#     --num_unconditional_files 25 \
+#     --sigma_min 0.00001 \
+#     --sigma_max 15 \
+#     --sigma_data 0.17
+
+#  \
+#     --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_1/checkpoints/last.ckpt
