@@ -222,17 +222,14 @@ class ScoreModel(pl.LightningModule):
 
 
     def sample_time(self, x):
-        if self.preconditioning == "song":
-            t = torch.rand(x.shape[0], device=x.device) * (self.sde.T - self.t_eps) + self.t_eps
-        if self.preconditioning == "karras":
+        if self.preconditioning == "karras": #Weird logNormal distribution. Complete mismatch wiht expected inference. Do not use that. (cf. Eloi)
+            raise NotImplementedError
             log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
             sigma = self.t_eps + torch.exp(log_sigma)
             t = sigma #identity in EDM SDE
-        if self.preconditioning == "karras_eloi": #Use the same sampling scheme as during reverse process
+        else:
             a = torch.rand(x.shape[0], device=x.device)
-            sigma = (self.sde.sigma_max**(1/self.sde.rho) + a*(self.sde.sigma_min**(1/self.sde.rho) - self.sde.sigma_max**(1/self.sde.rho)))**self.sde.rho
-            t = sigma #identity in EDM SDE
-
+            t = self.sde.scheduler.continuous_step(a)
         return t
 
     def forward(self, x, t, score_conditioning, **kwargs):
