@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=8          # We have 64 total in spgpu2 and 32 in spgpu1, making it 8 cores per GPU process in both cases
 #SBATCH --partition=all
 #SBATCH --nodelist=spgpu2          # Or set it to spgpu1
-#SBATCH --job-name=edm_vctk_1_150
+#SBATCH --job-name=song_vctk_1_150
 #SBATCH --output=.slurm/%x-%j.out    # Save to folder ./jobs, %x means the job name. You may need to create this folder
 #SBATCH --error=.slurm/%x-%j.err
 #SBATCH --time=4-00:00             # Limit job to 4 days
@@ -27,15 +27,15 @@ elif [ "$pc" = spgpu2 ]; then
     home_dir=/export/home/lemercier
 fi;
 
-# # VCTK Song Scale Factor = 0.1
-# base_dir="/data3/lemercier/databases/vctk_56spk/audio"
+# # VCTK Song Scale Factor = 0.1 sigma_max=0.5 as in previous work
+# base_dir="$data_dir/vctk_56spk/audio"
 # format="vctk"
 # srun -K1 -u python3 train.py \
 #     --backbone ncsnpp \
 #     --format  $format \
 #     --base_dir $base_dir \
-#     --testset_dir /data3/lemercier/databases/wsj0_derev_with_rir \
-#     --batch_size 8 \
+#     --testset_dir $data_dir/vctk_derev_with_rir \
+#     --batch_size 16 \
 #     --gpus 1 \
 #     --spec_abs_exponent 1. \
 #     --spec_factor 0.1 \
@@ -43,9 +43,29 @@ fi;
 #     --sde ve \
 #     --preconditioning song \
 #     --num_eval_files 10 \
-#     --num_unconditional_files 5 \
+#     --num_unconditional_files 25 \
 #     --sigma_min 0.01 \
-#     --sigma_max 15
+#     --sigma_max 0.5
+
+# VCTK Song Scale Factor = 1 a la Eloi
+base_dir=$data_dir/vctk_56spk/audio
+format="vctk"
+srun -K1 -u python3 train.py \
+    --backbone ncsnpp \
+    --format  $format \
+    --base_dir $base_dir \
+    --testset_dir $data_dir/vctk_derev_with_rir \
+    --batch_size 16 \
+    --gpus 1 \
+    --spec_abs_exponent 1. \
+    --spec_factor 1 \
+    --condition none \
+    --sde ve \
+    --preconditioning song \
+    --num_eval_files 10 \
+    --num_unconditional_files 25 \
+    --sigma_min 1e-5 \
+    --sigma_max 150
 
 # VCTK EDM Scale Factor = 0.1
 # base_dir="$data_dir/vctk_56spk/audio"
@@ -67,27 +87,6 @@ fi;
 #     --sigma_min 0.00001 \
 #     --sigma_max 15 \
 #     --sigma_data 0.17
-
-# # VCTK Song Scale Factor = 0.1 SIGMA_MAX = 1.5
-# base_dir="/data3/lemercier/databases/vctk_56spk/audio"
-# format="vctk"
-# srun -K1 -u python3 train.py \
-#     --backbone ncsnpp \
-#     --format  $format \
-#     --base_dir $base_dir \
-#     --testset_dir /data3/lemercier/databases/wsj0_derev_with_rir \
-#     --batch_size 8 \
-#     --gpus 1 \
-#     --spec_abs_exponent 1. \
-#     --spec_factor 0.1 \
-#     --condition none \
-#     --sde ve \
-#     --preconditioning song \
-#     --num_eval_files 10 \
-#     --num_unconditional_files 5 \
-#     --sigma_min 0.01 \
-#     --sigma_max 1.5
-
 
 # # VCTK EDM Scale Factor = 0.1 SIGMA MAX = 1.5
 # base_dir="$data_dir/vctk_56spk/audio"
@@ -111,27 +110,27 @@ fi;
 #     --sigma_data 0.17 \
 #     --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_9/checkpoints/last.ckpt
 
-# VCTK EDM Scale Factor = 1 (comparison Eloi)
-base_dir="$data_dir/vctk_56spk/audio"
-format="vctk"
-srun -K1 -u python3 train.py \
-    --backbone ncsnpp \
-    --format  $format \
-    --base_dir $base_dir \
-    --testset_dir $data_dir/vctk_derev_with_rir \
-    --batch_size 16 \
-    --gpus 1 \
-    --spec_abs_exponent 1. \
-    --spec_factor 1 \
-    --condition none \
-    --sde edm \
-    --preconditioning karras_eloi \
-    --num_eval_files 10 \
-    --num_unconditional_files 25 \
-    --sigma_min 0.00001 \
-    --sigma_max 150 \
-    --sigma_data 1.7 \
-    --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_12/checkpoints/last.ckpt
+# # VCTK EDM Scale Factor = 1 (comparison Eloi)
+# base_dir="$data_dir/vctk_56spk/audio"
+# format="vctk"
+# srun -K1 -u python3 train.py \
+#     --backbone ncsnpp \
+#     --format  $format \
+#     --base_dir $base_dir \
+#     --testset_dir $data_dir/vctk_derev_with_rir \
+#     --batch_size 16 \
+#     --gpus 1 \
+#     --spec_abs_exponent 1. \
+#     --spec_factor 1 \
+#     --condition none \
+#     --sde edm \
+#     --preconditioning karras_eloi \
+#     --num_eval_files 10 \
+#     --num_unconditional_files 25 \
+#     --sigma_min 0.00001 \
+#     --sigma_max 150 \
+#     --sigma_data 1.7 \
+#     --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_12/checkpoints/last.ckpt
     
 # # VCTK EDM Scale Factor = 0.1
 # base_dir="$data_dir/vctk_56spk/audio"
