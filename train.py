@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
 	# Callbacks
 	callbacks = []
-	callbacks.append(EarlyStopping(monitor="valid_loss", mode="min", patience=50))
+	# callbacks.append(EarlyStopping(monitor="valid_loss", mode="min", patience=50))
 	callbacks.append(TQDMProgressBar(refresh_rate=50))
 	if not args.nolog:
 		callbacks.append(ModelCheckpoint(dirpath=os.path.join(logger.log_dir, "checkpoints"), 

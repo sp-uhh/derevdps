@@ -227,15 +227,15 @@ python3 train.py \
     --limit_train_batches 25 \
     --limit_val_batches 10
 
-base_dir="/data/lemercier/databases/wsj0+chime3/audio"
+base_dir="/data3/lemercier/databases/wsj0+chime3/audio"
 format="wsj0"
 python3 train.py \
     --backbone ncsnpp \
     --format  $format \
     --base_dir $base_dir \
-    --testset_dir /data/lemercier/databases/wsj0_derev_with_rir \
+    --testset_dir /data3/lemercier/databases/wsj0_derev_with_rir \
     --batch_size 2 \
-    --gpus 1 \
+    --gpus 1, \
     --spec_abs_exponent 1. \
     --spec_factor 0.1 \
     --condition none \
