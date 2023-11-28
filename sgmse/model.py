@@ -34,7 +34,7 @@ class ScoreModel(pl.LightningModule):
     def __init__(self,
         backbone: str = "ncsnpp", sde: str = "vesde", preconditioning = "song",
         lr: float = 1e-4, ema_decay: float = 0.999,
-        t_eps: float = 3e-2, transform: str = 'none', nolog: bool = False,
+        t_eps: float = 0., transform: str = 'none', nolog: bool = False,
         num_eval_files: int = 10, loss_type: str = 'mse', data_module_cls = None, 
         condition: str = "none",
         num_unconditional_files: int = 5,
@@ -75,17 +75,11 @@ class ScoreModel(pl.LightningModule):
         self.loss_type = loss_type
         self.num_eval_files = num_eval_files
         self.num_unconditional_files = num_unconditional_files
+        self.sigma_data = kwargs.get("sigma_data", None)
 
         self.save_hyperparameters(ignore=['nolog'])
         self.data_module = data_module_cls(**kwargs)
         self.condition = condition
-        self._reduce_op = lambda *args, **kwargs: 0.5 * torch.sum(*args, **kwargs)
-
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
-            self.p_mean = kwargs["p_mean"]
-            self.p_std = kwargs["p_std"]
-            self.sigma_data = kwargs["sigma_data"]
-
         self.nolog = nolog
         
         # Just for logging loss versus sigma
@@ -98,11 +92,11 @@ class ScoreModel(pl.LightningModule):
     def add_argparse_args(parser):
         parser.add_argument("--lr", type=float, default=1e-4, help="The learning rate")
         parser.add_argument("--ema_decay", type=float, default=0.999, help="The parameter EMA decay constant (0.999 by default)")
-        parser.add_argument("--t_eps", type=float, default=0.03, help="The minimum time (3e-2 by default)")
+        parser.add_argument("--t_eps", type=float, default=0., help="The minimum time (3e-2 by default in Song, but we found it should be 0 in fact)")
         parser.add_argument("--num_eval_files", type=int, default=10, help="Number of files for speech enhancement performance evaluation during training.")
         parser.add_argument("--loss_type", type=str, default="mse", choices=("mse", "mae", "gaussian_entropy", "kristina", "sisdr", "time_mse"), help="The type of loss function to use.")
         parser.add_argument("--condition", default="noisy", choices=["noisy", "none"])
-        parser.add_argument("--preconditioning", default="song", choices=["song", "karras", "karras_eloi"])
+        parser.add_argument("--preconditioning", default="song", choices=["song", "karras"])
 
         parser.add_argument("--sigma_data", type=float, default=1.7)
         parser.add_argument("--p_mean", type=float, default=-1.2)
@@ -149,29 +143,16 @@ class ScoreModel(pl.LightningModule):
     def eval(self, no_ema=False):
         return self.train(False, no_ema=no_ema)
 
-    def _loss(self, err, sigma, err_time=None, err_mag=None):
-        if self.loss_type == 'mse':
-            losses = torch.square(err.abs())
-            losses = self.preconditioning_loss(losses, sigma)
-            loss = torch.mean(0.5*torch.sum(losses.reshape(losses.shape[0], -1), dim=-1))
-
-        elif self.loss_type == 'mae':
-            losses = err.abs()
-            losses = self.preconditioning_loss(losses, sigma)
-            loss = torch.mean(0.5*torch.sum(losses.reshape(losses.shape[0], -1), dim=-1))
-
-        return loss
-
-    def preconditioning_input(self, dnn_input, t):
+    def preconditioning_input(self, t, shape_tensor):
         if self.preconditioning == "song":
-            scale = 1.
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
+            c_in = 1.
+        if self.preconditioning == "karras":
             sigma = self.sde._std(t).squeeze()
-            scale = 1/torch.sqrt( self.sigma_data**2 + sigma**2)
-            if scale.ndim and scale.ndim < dnn_input.ndim:
-                scale = scale.view(scale.size(0), *(1,)*(dnn_input.ndim - scale.ndim))
+            c_in = 1/torch.sqrt( self.sigma_data**2 + sigma**2)
+            if c_in.ndim and c_in.ndim < shape_tensor.ndim:
+                c_in = c_in.view(c_in.size(0), *(1,)*(shape_tensor.ndim - c_in.ndim))
 
-        return scale * dnn_input
+        return c_in
 
     def preconditioning_noise(self, t):
         if self.preconditioning == "song":
@@ -181,7 +162,7 @@ class ScoreModel(pl.LightningModule):
         if self.preconditioning == "song_sigma":
             sigma = self.sde._std(t).squeeze()
             c_noise = sigma.unsqueeze(0)
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
+        if self.preconditioning == "karras":
             sigma = self.sde._std(t).squeeze()
             if not sigma.ndim:
                 sigma = sigma.unsqueeze(0)
@@ -189,60 +170,72 @@ class ScoreModel(pl.LightningModule):
 
         return c_noise
 
-    def preconditioning_output(self, dnn_output, t):
+    def preconditioning_output(self, t, shape_tensor):
         if self.preconditioning == "song":
             sigma = self.sde._std(t).squeeze()
-            scale = sigma
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
+            c_out = sigma
+        if self.preconditioning == "karras":
             sigma = self.sde._std(t).squeeze()
-            scale = sigma * self.sigma_data / torch.sqrt(self.sigma_data**2 + sigma**2)
-        if scale.ndim and scale.ndim < dnn_output.ndim:
-            scale = scale.view(scale.size(0), *(1,)*(dnn_output.ndim - scale.ndim))
+            c_out = sigma * self.sigma_data / torch.sqrt(self.sigma_data**2 + sigma**2)
 
-        return scale * dnn_output
+        if c_out.ndim and c_out.ndim < shape_tensor.ndim:
+            c_out = c_out.view(c_out.size(0), *(1,)*(shape_tensor.ndim - c_out.ndim))
 
-    def preconditioning_skip(self, x, t):
+        return c_out
+
+    def preconditioning_skip(self, t, shape_tensor):
         if self.preconditioning == "song":
-            scale = 1.
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
+            c_skip = 1.
+        if self.preconditioning == "karras":
             sigma = self.sde._std(t).squeeze()
-            scale = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
-            if scale.ndim and scale.ndim < x.ndim:
-                scale = scale.view(scale.size(0), *(1,)*(x.ndim - scale.ndim))
+            c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
+            if c_skip.ndim and c_skip.ndim < shape_tensor.ndim:
+                c_skip = c_skip.view(c_skip.size(0), *(1,)*(shape_tensor.ndim - c_skip.ndim))
 
-        return scale * x
+        return c_skip
+    
+    def preconditioning_target(self, x, n, t):
+        ''' As proposed in Karras et al. in the derviations for the loss weighting. Using this formulation assures that the loss is somehow normalized.'''
+        c_out = self.preconditioning_output(t, shape_tensor=x)
+        c_skip = self.preconditioning_skip(t, shape_tensor=x)
 
-    def preconditioning_loss(self, loss, sigma):
-        if self.preconditioning == "song":
-            # weight = 1. / sigma**2
-            weight = 1. # TMP Remove that for now and retry: it seems that the weighting using big sigmas really kills the network
-        if self.preconditioning == "karras" or self.preconditioning == "karras_eloi":
-            weight = (sigma**2 + self.sigma_data**2) / (sigma + self.sigma_data)**2
-
-        return weight * loss
-
+        target= 1/c_out * (x - c_skip * (x+n))
+        return target
 
     def sample_time(self, x):
-        if self.preconditioning == "karras": #Weird logNormal distribution. Complete mismatch wiht expected inference. Do not use that. (cf. Eloi)
-            raise NotImplementedError
-            log_sigma = self.p_mean + self.p_std * torch.randn(x.shape[0], device=x.device)
-            sigma = self.t_eps + torch.exp(log_sigma)
-            t = sigma #identity in EDM SDE
-        else:
-            a = torch.rand(x.shape[0], device=x.device)
-            t = self.sde.scheduler.continuous_step(a)
+        a = torch.rand(x.shape[0], device=x.device)
+        t = self.sde.scheduler.continuous_step(a)
         return t
 
     def forward(self, x, t, score_conditioning, **kwargs):
-        dnn_input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
-        dnn_input = self.preconditioning_input(dnn_input, t)
+        '''For inference. Return directly tweedie denoiser'''
+        input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
+
+        c_in = self.preconditioning_input(t, shape_tensor=x)
+        c_out = self.preconditioning_output(t, shape_tensor=x)
+        c_skip = self.preconditioning_skip(t, shape_tensor=x)
         noise_input = self.preconditioning_noise(t)
+
+        dnn_input = c_in * input
         dnn_output = self.dnn(dnn_input, noise_input)
-        output = self.preconditioning_output(dnn_output, t)
-        skip = self.preconditioning_skip(x, t)
+        output =  c_out * dnn_output
+        skip = c_skip * x
+
         tweedie_denoiser = skip + output
         
         return tweedie_denoiser
+
+    def forward_train(self, x, t, score_conditioning, **kwargs):
+        '''For training only, raw dnn_output'''
+        input = torch.cat([x] + score_conditioning, dim=1) #b,n_input*d,f,t
+
+        c_in = self.preconditioning_input(t, shape_tensor=x)
+        noise_input = self.preconditioning_noise(t)
+
+        dnn_input = c_in * input
+        dnn_output = self.dnn(dnn_input, noise_input)
+
+        return dnn_output
 
     def _step(self, batch, batch_idx):
         if len(batch) == 1: #In case we use a dataset with only clean speech
@@ -255,29 +248,27 @@ class ScoreModel(pl.LightningModule):
         z = torch.randn_like(x)
         if std.ndim < x.ndim:
             std = std.view(*std.size(), *((1,)*(x.ndim - std.ndim)))
-        sigma = std
-        perturbed_data = mean + sigma * z
+        noise = std * z
+        perturbed_data = mean + noise
 
         score_conditioning = []
-        tweedie_denoiser = self(perturbed_data, t, score_conditioning=score_conditioning, sde_input=y)
+        dnn_output = self.forward_train(perturbed_data, t, score_conditioning=score_conditioning, sde_input=y)
+        target = self.preconditioning_target(x, noise, t)
 
-        err = tweedie_denoiser - x
-        loss = self._loss(err, sigma)
+        err = dnn_output - target
+        losses = torch.square(err.abs()).reshape(err.shape[0], -1)
+        loss = torch.mean(losses)
 
-        # shity patch to log the loss in my own way (inherited from Eloi)
-        da_loss = torch.square(err.abs())
-        da_loss = self.preconditioning_loss(da_loss, sigma)
-        da_loss=da_loss.reshape(da_loss.shape[0], -1)
+        # Log loss vs sigma
         for i in range(len(err)):
-            self.loss_logger.write_loss(sigma[i].item(), da_loss[i].mean().item(), da_loss[i].var().item())
+            self.loss_logger.write_loss(std[i].item(), losses[i].mean().item(), losses[i].var().item())
 
         return loss
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx)
         self.log('train_loss', loss, on_step=True, on_epoch=True, batch_size=self.data_module.batch_size, sync_dist=True)
-        # if (batch_idx + 1) % 100 == 0:
-        if batch_idx % 100 == 0:
+        if (batch_idx + 1) % 100 == 0:
             self.log_loss_sigma()
              
         return loss

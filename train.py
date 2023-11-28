@@ -67,7 +67,7 @@ if __name__ == '__main__':
 		nolog=args.nolog
 	)
 	data_tag = model.data_module.base_dir.strip().split("/")[-3] if model.data_module.format == "whamr" else model.data_module.base_dir.strip().split("/")[-1] 
-	logging_name = f"sde={sde_class.__name__}_backbone={args.backbone}_data={model.data_module.format}_ch={model.data_module.spatial_channels}"
+	logging_name = f"sde={sde_class.__name__}_backbone={args.backbone}_data={model.data_module.format}_pretarget"
 
 	logger = TensorBoardLogger(save_dir=f"./.logs/", name=logging_name, flush_secs=30) if not args.nolog else None
 
