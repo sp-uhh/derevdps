@@ -560,7 +560,10 @@ class ScoreModel(pl.LightningModule):
                 print("Not 16kHz. Resampling to 16kHz for PESQ and (E)STOI")
                 x_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x[i]).cpu().numpy()
                 x_hat_resampled = torchaudio.transforms.Resample(orig_freq=self.data_module.sample_rate, new_freq=16000)(x_hat[i]).cpu().numpy()
-            _pesq[i] = pesq(16000, x_resampled, x_hat_resampled, 'wb') 
+            try:
+                _pesq[i] = pesq(16000, x_resampled, x_hat_resampled, 'wb') 
+            except ValueError:
+                _pesq[i] = 0.
             _estoi[i] = stoi(x_resampled, x_hat_resampled, 16000, extended=True)
 
         print(f"PESQ at epoch {self.current_epoch} : {_pesq.mean():.2f}")

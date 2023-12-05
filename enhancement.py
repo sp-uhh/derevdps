@@ -2,8 +2,8 @@ import numpy as np
 import glob
 
 from tqdm import tqdm
-from torchaudio import load, save
 import torch
+import torchaudio
 import os
 from argparse import ArgumentParser
 
@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 
 EPS_LOG = 1e-10
 
+torch.random.manual_seed(0)
+
 def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
 
     if args.operator != "none":
@@ -37,7 +39,10 @@ def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
         operator, A, zeta, zeta_schedule = None, None, None, None
 
     y, sr = torchaudio.load(file)
-    y = y[..., : int(3.5*sr)]
+    if sr != model.data_module.sample_rate:
+        y = torchaudio.transforms.Resample(orig_freq=sr, new_freq=model.data_module.sample_rate)(y)
+    # y = y[..., : int(3.5*sr)]
+    y = y[..., : int(12*sr)]
 
     return y, A, zeta, operator, zeta_schedule
         
@@ -80,6 +85,7 @@ for parser_ in (base_parser, parser):
                          "the usual number of steps N=50 (correction by dt in the code after submitting the paper), one needs to use the value zeta0*N = 2500")
     parser_.add_argument("--zeta_schedule", type=str, default="saw-tooth-increase", help="Anneal the log-likelihood term with a zeta step size schedule.")
     parser_.add_argument("--sw", type=float, default=None, help="Switching time between posteriors if posterior==switching.")
+    parser_.add_argument("--churn", type=float, default=10, help="Karras sampler.") 
     
     parser_.add_argument("--measurement_noise", type=float, default=None, help="Additive Gaussian measurement noise. Given as a SNR in dB.")
 
@@ -125,11 +131,12 @@ for i, f in tqdm.tqdm(enumerate(files), total=len(files)):
     x_hat = model.enhance(y, 
         sampler_type=args.sampler_type, probability_flow=not(args.no_probability_flow), N=args.N, scheduler=args.scheduler,
         predictor=args.predictor,
-        corrector=args.corrector, corrector_steps=args.corrector_steps, r=args.r, 
+        corrector=args.corrector, corrector_steps=args.corrector_steps, r=args.r,
+        smin=model.sde.sigma_min, smax=model.sde.sigma_max, churn=args.churn,
         posterior=args.posterior, operator=operator, A=A,  zeta=zeta, zeta_schedule=zeta_schedule, sw=args.sw,
         **other_kwargs)
     
-    save(f'{args.enhanced_dir}/{os.path.basename(f)}', x_hat.type(torch.float32).cpu().squeeze().unsqueeze(0), model_sr)
+    torchaudio.save(f'{args.enhanced_dir}/{os.path.basename(f)}', x_hat.type(torch.float32).cpu().squeeze().unsqueeze(0), model_sr)
 
     y = None
     x_hat = None

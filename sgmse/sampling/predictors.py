@@ -48,6 +48,7 @@ class EulerMaruyamaPredictor(Predictor):
     def update_fn(self, x, t, dt, conditioning, sde_input, **kwargs):
         z = torch.randn_like(x)
         f, g, score = self.rsde.sde(x, t, conditioning, sde_input, **kwargs)
+
         x_mean = x + f * dt
         if g.ndim < x.ndim:
             g = g.view( *g.size(), *((1,)*(x.ndim - g.ndim)) )
@@ -108,9 +109,9 @@ class EulerHeunDPSPredictor(Predictor):
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
         norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
-        normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5
+        normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
 
-        zeta_t = self.zeta/(normguide+1e-6)
+        zeta_t = self.zeta/normguide
 
         return -zeta_t*norm_grad/t, norm
 
@@ -120,7 +121,8 @@ class EulerHeunDPSPredictor(Predictor):
         likelihood_score, distance = self.get_likelihood_score(score, x,t, measurement, A)
 
         f = -t.view(*t.size(), *((1,)*(score.ndim-t.ndim)))*(score+likelihood_score)
-        x_mean = x + f * dt 
+        x_mean = x + f * dt
+
         if (self.sde._std(t + dt) > 0).any():
             t_next = t + dt
             f_next, _, score_next = self.rsde.sde(x_mean, t_next, conditioning, sde_input, **kwargs)

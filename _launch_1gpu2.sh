@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=8          # We have 64 total in spgpu2 and 32 in spgpu1, making it 8 cores per GPU process in both cases
 #SBATCH --partition=all
 #SBATCH --nodelist=spgpu2          # Or set it to spgpu1
-#SBATCH --job-name=edm_vctk_1_150_pt
+#SBATCH --job-name=song_vctk_1_15_pt
 #SBATCH --output=.slurm/%x-%j.out    # Save to folder ./jobs, %x means the job name. You may need to create this folder
 #SBATCH --error=.slurm/%x-%j.err
 #SBATCH --time=4-00:00             # Limit job to 4 days
@@ -27,8 +27,8 @@ elif [ "$pc" = spgpu2 ]; then
     home_dir=/export/home/lemercier
 fi;
 
-# # VCTK Song Scale Factor = 0.1 sigma_max=0.5 as in previous work
-# base_dir="$data_dir/vctk_56spk/audio"
+# # VCTK EDM Scale Factor = 1 (comparison Eloi)
+# base_dir=$data_dir/vctk_56spk/audio
 # format="vctk"
 # srun -K1 -u python3 train.py \
 #     --backbone ncsnpp \
@@ -38,36 +38,18 @@ fi;
 #     --batch_size 16 \
 #     --gpus 1 \
 #     --spec_abs_exponent 1. \
-#     --spec_factor 0.1 \
-#     --condition none \
-#     --sde ve \
-#     --preconditioning song \
-#     --num_eval_files 10 \
-#     --num_unconditional_files 25 \
-#     --sigma_min 0.01 \
-#     --sigma_max 0.5
-
-# # VCTK Song Scale Factor = 1 a la Eloi
-# base_dir=$data_dir/vctk_56spk/audio
-# format="vctk"
-# srun -K1 -u python3 train.py \
-#     --backbone ncsnpp \
-#     --format  $format \
-#     --base_dir $base_dir \
-#     --testset_dir $data_dir/vctk_derev_with_rir \
-#     --batch_size 16 \
-#     --gpus 3, \
-#     --spec_abs_exponent 1. \
 #     --spec_factor 1 \
 #     --condition none \
-#     --sde ve \
-#     --preconditioning song \
+#     --sde edm \
+#     --preconditioning karras \
 #     --num_eval_files 10 \
 #     --num_unconditional_files 25 \
 #     --sigma_min 1e-5 \
-#     --sigma_max 150
+#     --sigma_max 150 \
+#     --sigma_data 1.7
 
-# VCTK EDM Scale Factor = 1 (comparison Eloi)
+
+# VCTK Song Scale Factor = 1 Sigma_max = 5 
 base_dir=$data_dir/vctk_56spk/audio
 format="vctk"
 srun -K1 -u python3 train.py \
@@ -80,13 +62,46 @@ srun -K1 -u python3 train.py \
     --spec_abs_exponent 1. \
     --spec_factor 1 \
     --condition none \
-    --sde edm \
-    --preconditioning karras \
+    --sde ve \
+    --preconditioning song \
     --num_eval_files 10 \
     --num_unconditional_files 25 \
     --sigma_min 1e-5 \
-    --sigma_max 150 \
-    --sigma_data 1.7
+    --sigma_max 15 \
+    --t_eps 1e-3
+
+# # VCTK Song Scale Factor = 1 Sigma_max = 1.5 
+# base_dir=$data_dir/vctk_56spk/audio
+# format="vctk"
+# srun -K1 -u python3 train.py \
+#     --backbone ncsnpp \
+#     --format  $format \
+#     --base_dir $base_dir \
+#     --testset_dir $data_dir/vctk_derev_with_rir \
+#     --batch_size 16 \
+#     --gpus 1 \
+#     --spec_abs_exponent 1. \
+#     --spec_factor 1 \
+#     --condition none \
+#     --sde ve \
+#     --preconditioning song \
+#     --num_eval_files 10 \
+#     --num_unconditional_files 25 \
+#     --sigma_min 1e-5 \
+#     --sigma_max 1.5 \
+#     --t_eps 1e-3
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -28,7 +28,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, zeta, clip=50_000):
+def pick_zeta_schedule(schedule, t, zeta, linear_t, clip=50_000):
     if schedule == "none":
         return None
     if schedule == "constant":
@@ -44,17 +44,18 @@ def pick_zeta_schedule(schedule, t, zeta, clip=50_000):
     if schedule == "exp-increase":
         zeta_t = zeta * np.exp(t)
     if schedule == "log-increase":
-        zeta_t = zeta * np.log(1+1e10+t)
+        zeta_t = zeta * np.log(1+1e-10+t)
     if schedule == "div-sig":
         zeta_t = zeta / t
     if schedule == "div-sig-square":
         zeta_t = zeta / t**2
     if schedule == "saw-tooth-increase":
         max_step = .9
-        if t < max_step: #ramp from 0 to zeta0 in rho_max
-            zeta_t = zeta/max_step * t
+        if linear_t < max_step: #ramp from 0 to zeta0 in rho_max
+            zeta_t = zeta/max_step * linear_t
         else:
-            zeta_t = zeta + zeta * (max_step - t)/(1-max_step)
+            zeta_t = zeta + zeta * (max_step - linear_t)/(1-max_step)
+        # print(linear_t, zeta_t)
 
     return min(zeta_t, clip)
 
@@ -178,32 +179,34 @@ def get_karras_sampler(
 
         for i in pbar:
             z = noise_std * torch.randn_like(xt)
-            gamma = min(churn/sde.N, np.sqrt(2)-1.) if (not(probability_flow) and timesteps[i] > smin and timesteps[i] < smax) else 0.
+            gamma = min(churn/sde.N, np.sqrt(2)-1.) if (timesteps[i] > smin and timesteps[i] < smax) else 0.
             t_overnoised = timesteps[i]*(1 + gamma) * torch.ones(sde_input.shape[0], device=sde_input.device)
-            if posterior_name != "none":
-                posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), zeta0)
+            if posterior is not None:
+                posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), zeta0, linear_t=(sde.N-i)/sde.N)
             dt = timesteps[i+1] - timesteps[i]*(1 + gamma) # dt < 0 (time flowing in reverse)
             if gamma > 0:
-                xt = xt + timesteps[i] * torch.sqrt((1 + gamma)**2 - 1) * torch.ones_like(xt) * z
+                xt = xt + timesteps[i] * np.sqrt((1 + gamma)**2 - 1) * torch.ones_like(xt) * z
 
             # predictor
             grad_required = posterior.grad_required(timesteps[i].item(), **kwargs)
             xt = xt.requires_grad_(grad_required)
+            xt_previous = xt.clone()
             with torch.set_grad_enabled(grad_required):
                 if predictor_name=="euler-heun-dps":
                     xt, xt_mean, score, At, distance = predictor.update_fn(xt, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input,measurement=measurement, A=At, **kwargs)
                 else:
-                    xt, xt_mean, score = predictor.update_fn(xt, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
+                    # xt, xt_mean, score = predictor.update_fn(xt, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
+                    xt, xt_mean, score = predictor.update_fn(xt_previous, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
     
             # posterior
             if i < sde.N - 1 and predictor_name != "euler-heun-dps" and posterior.zeta > 0.:
                 with torch.set_grad_enabled(grad_required):
-                    xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                    # xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                    xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, xt_previous, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
                 xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
             pbar.set_postfix({'distance': distance.item()}, refresh=False)
 
-            if grad_required:
-                xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
+            xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
 
         x_result = xt
         ns = sde.N * (int(grad_required) + 1)

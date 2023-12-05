@@ -56,9 +56,10 @@ class NoPosteriorSampling(Posterior):
 @PosteriorRegistry.register('dps')
 class PosteriorSampling(Posterior):
     
-    def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
-        x_0_hat = self.tweedie_from_score(score, x, t, sde_input)
-        x_0_hat.requires_grad_(True)
+    # def update_fn(self, x, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+    def update_fn(self, x, x_grad_ref, t, dt, measurement, sde_input, score, A, *args, **kwargs):
+        # x_0_hat = self.tweedie_from_score(score, x, t, sde_input)
+        x_0_hat = self.tweedie_from_score(score, x_grad_ref, t, sde_input)
 
         measurement_linear, x_0_hat_linear = self.linearization(measurement.squeeze(0)).unsqueeze(0), self.linearization(x_0_hat.squeeze(0)).unsqueeze(0)
         self.operator.load_weights(A.squeeze(0))
@@ -66,15 +67,17 @@ class PosteriorSampling(Posterior):
         difference = measurement_linear - measurement_estimated
         norm = torch.linalg.norm(difference)
 
-        norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+        # norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+        norm_grad = torch.autograd.grad(outputs=norm, inputs=x_grad_ref)[0]
         normguide = torch.linalg.norm(norm_grad)/x.shape[-1]**0.5 + 1e-6
-        
+
         x  = x + norm_grad * self.zeta / normguide * dt #dt < 0
         return x, A, norm, measurement_estimated, x_0_hat_linear
 
     def grad_required(self, t, **kwargs):
-        return self.zeta > 0
-    
+        return True
+        # return self.zeta > 0
+        
 @PosteriorRegistry.register('state-dps')
 class StateDPSPosteriorSampling(Posterior):
     
