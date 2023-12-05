@@ -11,6 +11,10 @@ from .correctors import Corrector, CorrectorRegistry
 from .posteriors import Posterior, PosteriorRegistry
 from .operators import LinearOperator, OperatorRegistry
 from .schedulers import Scheduler, SchedulerRegistry
+from .optimizers import get_optimizer
+
+from sgmse.util.graphics import visualize_one
+from sgmse.util.other import pad_spec
 
 __all__ = [
     'PredictorRegistry', 'CorrectorRegistry', 'PosteriorRegistry', 'OperatorRegistry', 'SchedulerRegistry'
@@ -28,7 +32,7 @@ def from_flattened_numpy(x, shape):
     """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
     return torch.from_numpy(x.reshape(shape))
 
-def pick_zeta_schedule(schedule, t, zeta, linear_t, clip=50_000):
+def pick_zeta_schedule(schedule, t, zeta, linear_t=None, clip=50_000):
     if schedule == "none":
         return None
     if schedule == "constant":
@@ -215,7 +219,6 @@ def get_karras_sampler(
 
 
 
-
 def get_reddiff_sampler(
     scheduler_name = "edm", sde = "edm", 
     # score_fn = None, 
@@ -244,6 +247,7 @@ def get_reddiff_sampler(
     """
     scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
     scheduler = scheduler_cls(eps=0., **sde.__dict__, **kwargs)
+    zeta0 = zeta
     
     def REDDiff_optimizer():
         """The stochastic optimization function."""
@@ -265,11 +269,23 @@ def get_reddiff_sampler(
         mu = torch.autograd.Variable(x0, requires_grad=True)
         optimizer = get_optimizer(optimizer_name, params=[mu], lr=lr)
 
+
+
         for i in pbar:
 
+            optimizer.zero_grad()
+
             # Slightly perturb curent prediction (why? Not in the paper? Check)
-            z0 = torch.randn_like(mu)
-            mu_perturbed = mu + stochastic_std * z0
+            # z0 = torch.randn_like(mu)
+            # mu_perturbed = mu + stochastic_std * z0
+
+            weight_score = pick_zeta_schedule(zeta_schedule, timesteps[i], zeta0, linear_t=None)
+            # if i > len(timesteps)*0.75: 
+            #     weight_score = (1-i)*weight_score
+            # if i < len(timesteps)*0.25: 
+            #     weight_score = i*weight_score
+
+            mu_perturbed = mu
 
             # Score matching term
             t = timesteps[i] * torch.ones(sde_input.shape[0], device=sde_input.device)
@@ -281,10 +297,16 @@ def get_reddiff_sampler(
 
             # Option 1: with Tweedie
             # RED score matching regularization (using the Tweedie-wise eq. 10 rather than the score-wise eq. 9)
-            tweedie = tweedie_fn(xt, t, conditioning).detach()
+            with torch.no_grad():
+                tweedie = tweedie_fn(xt, t, conditioning).detach()
             # loss_score = torch.mul((tweedie - mu_perturbed).detach(), mu_perturbed).mean()
-            loss_score = (tweedie - mu_perturbed).abs().square().sum()  # Try same as Eloi
-            weight_score = zeta 
+            
+            # loss_score = (tweedie - mu_perturbed).abs().square().sum()  # Try same as Eloi
+
+            # Try linearizing that too
+            tweedie_linear = linearization(tweedie.squeeze(0)).unsqueeze(0)
+            mu_perturbed_linear = linearization(mu_perturbed.squeeze(0)).unsqueeze(0)
+            loss_score = (tweedie_linear - mu_perturbed_linear).abs().square().sum()  # Try same as Eloi
 
             # # Option 2: with score
             # score = score_fn(xt, t, conditioning).detach()
@@ -299,10 +321,10 @@ def get_reddiff_sampler(
             # loss_obs = (measurement_linear - measurement_estimated_linear).abs().square().mean() / 2
             loss_obs = (measurement_linear - measurement_estimated_linear).abs().square().sum() # Try same as Eloi
 
-            if i % 50 == 0:
-                # print(timesteps[i], std.item())
-                # visualize_one(tweedie, spec_path=".test", name=f"tweedie_{i}")
-                visualize_one(mu, spec_path=".test", name=f"mu_{i}")
+            # if i % 50 == 0:
+            #     # print(timesteps[i], std.item())
+            #     # visualize_one(tweedie, spec_path=".test", name=f"tweedie_{i}")
+            #     visualize_one(mu, spec_path=".test", name=f"mu_{i}")
 
             # n_fft = 512
             # hop_length = 128
@@ -315,14 +337,18 @@ def get_reddiff_sampler(
             # print(loss_obs, loss_score)
 
             # Weight losses and optimizer step
-            loss = loss_obs + weight_score * loss_score
+            print(loss_obs.item(), loss_score.item())
+            # loss = loss_obs + weight_score * loss_score
+
+            # if i < len(timesteps)/3:
+            #     weight_score = 5*zeta
+
             loss = (1 - weight_score) * loss_obs + weight_score * loss_score # Same as Eloi
 
 
 
 
             # Optimizer step
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 

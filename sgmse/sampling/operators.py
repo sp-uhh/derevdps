@@ -108,7 +108,36 @@ class ReverberationOperator(LinearOperator):
 
     def transpose(self, x, **kwargs):
         return x
+    
+    # def pinv(self, x, kernel):
+    #     nfft_if = min(2*int(16000*1.6), x.size(-1))
+    #     X = torch.stft(x, **self.stft_kwargs)
+    #     RTF = torch.fft.rfft(kernel, n=nfft_if).unsqueeze(-1)
+    #     regularized_iRTF = torch.conj(RTF) / (torch.square(torch.abs(RTF)) + 1e-2) 
+    #     S = X * regularized_iRTF
+    #     s = torch.istft(S, **self.stft_kwargs)
+    #     return s
+    
+    def pinv(self, x, kernel):
+        nfft_if = min(2*int(16000*1.6), x.size(-1))        
+        local_istft_kwargs = {
+            "n_fft": nfft_if,
+            "hop_length": nfft_if//2,
+            "window": torch.hann_window(nfft_if).to(x.device),
+            "center": True
+        }
+        local_stft_kwargs = {
+            **local_istft_kwargs,
+            "return_complex": True
+        }
 
+        X = torch.stft(x, **local_stft_kwargs)
+        RTF = torch.fft.rfft(kernel, n=nfft_if).unsqueeze(-1)
+        regularized_iRTF = torch.conj(RTF) / (torch.square(torch.abs(RTF)) + 1e-2) 
+        S = X * regularized_iRTF
+        s = torch.istft(S, **local_istft_kwargs)
+        return s
+    
     def get_kernel(self):
         return self.conv.get_kernel()
 

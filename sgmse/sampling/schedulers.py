@@ -18,7 +18,10 @@ class Scheduler(abc.ABC):
         self.eps = eps
 
     def reverse_timesteps(self, T):
-        lin_timesteps = torch.linspace(T, self.eps, self.N)
+        # lin_timesteps = torch.linspace(T, self.eps, self.N)
+
+        lin_timesteps = torch.linspace(T, 0., self.N)
+
         timesteps = self.continuous_step(lin_timesteps)
         return torch.cat([timesteps, torch.Tensor([0.])])
 
@@ -41,7 +44,9 @@ class VESongScheduler(Scheduler):
 class EDMScheduler(Scheduler):
 
     def __init__(self, N, eps=1e-6, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
+        print(eps)
         super().__init__(N, eps)
+
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho

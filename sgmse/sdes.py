@@ -168,7 +168,12 @@ class VESDE(SDE):
     
     def sde(self, x, t, *args, **kwargs):
         sigma = torch.sqrt(t)
-        diffusion = sigma * np.sqrt(2 * self.logsig)
+
+
+        # diffusion = sigma * np.sqrt(2 * self.logsig) #Cheat for reverse ODE: see eq. 209 in Karras , reverse ODE drift term shuold be - 1/2 score
+
+        diffusion = 1.
+
         return .0, diffusion
 
     def _mean(self, x0, t, *args, **kwargs):

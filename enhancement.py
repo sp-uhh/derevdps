@@ -67,7 +67,7 @@ for parser_ in (base_parser, parser):
     parser_.add_argument("--n", type=int, default=-1, help="Number of cropped files")
     parser_.add_argument("--gpu", type=int, default=0, help="Which GPU to perform inference on")
 
-    parser_.add_argument("--sampler_type", type=str, default="song", choices=["song", "karras"])
+    parser_.add_argument("--sampler_type", type=str, default="song", choices=["song", "karras", "red-diff"])
     parser_.add_argument("--no_probability_flow", action="store_true", help="Use SDE sampling instead of ODE probability flow sampling.")
     parser_.add_argument("--N", type=int, default=50, help="Number of reverse steps")
     parser_.add_argument("--scheduler", type=str, default="linear", choices=SchedulerRegistry.get_all_names())
@@ -87,6 +87,9 @@ for parser_ in (base_parser, parser):
     parser_.add_argument("--sw", type=float, default=None, help="Switching time between posteriors if posterior==switching.")
     parser_.add_argument("--churn", type=float, default=10, help="Karras sampler.") 
     
+    parser_.add_argument("--optimizer", type=str, default="adam", choices=["adam", "sgd"])
+    parser_.add_argument("--lr", type=float, default=1e-1, help="Learning rate for optimizer used in RED-Diff.")
+
     parser_.add_argument("--measurement_noise", type=float, default=None, help="Additive Gaussian measurement noise. Given as a SNR in dB.")
 
 args = parser.parse_args()
@@ -134,6 +137,7 @@ for i, f in tqdm.tqdm(enumerate(files), total=len(files)):
         corrector=args.corrector, corrector_steps=args.corrector_steps, r=args.r,
         smin=model.sde.sigma_min, smax=model.sde.sigma_max, churn=args.churn,
         posterior=args.posterior, operator=operator, A=A,  zeta=zeta, zeta_schedule=zeta_schedule, sw=args.sw,
+        optimizer=args.optimizer, lr=args.lr,
         **other_kwargs)
     
     torchaudio.save(f'{args.enhanced_dir}/{os.path.basename(f)}', x_hat.type(torch.float32).cpu().squeeze().unsqueeze(0), model_sr)

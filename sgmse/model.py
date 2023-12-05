@@ -389,6 +389,7 @@ class ScoreModel(pl.LightningModule):
         else:
             linearization = lambda x: self._istft(self._backward_transform(x))
         score_fn = lambda x, t, score_conditioning: self.sde.score_from_tweedie(self(x, t, score_conditioning), x, t, sde_input)
+        
         return sampling.get_song_sampler(
             predictor_name, scheduler_name, sde=sde, score_fn=score_fn, sde_input=sde_input, 
             eps=self.t_eps, probability_flow=probability_flow, conditioning=conditioning, 
@@ -411,12 +412,41 @@ class ScoreModel(pl.LightningModule):
         else:
             linearization = lambda x: self._istft(self._backward_transform(x))
         score_fn = lambda x, t, score_conditioning: self.sde.score_from_tweedie(self(x, t, score_conditioning), x, t, sde_input)
+        
         return sampling.get_karras_sampler(
             predictor_name, scheduler_name, sde=sde, score_fn=score_fn, sde_input=sde_input, 
             eps=self.t_eps, probability_flow=probability_flow, conditioning=conditioning, 
             posterior_name=posterior_name, operator=operator, measurement=measurement, A=A, zeta=zeta, zeta_schedule=zeta_schedule, linearization=linearization, 
             noise_std=noise_std, smin=smin, smax=smax, churn=churn,
             **kwargs)
+
+    def get_reddiff_sampler(self,
+        scheduler_name, sde_input, N, 
+        conditioning, 
+        operator, measurement, A, zeta, zeta_schedule,
+        optimizer_name, lr, stochastic_std,
+        **kwargs):
+
+        sde = self.sde
+        sde.N = N
+        if self.data_module.return_time:
+            linearization = lambda x: x
+        else:
+            linearization = lambda x: self._istft(self._backward_transform(x))
+
+        tweedie_fn = self.forward
+        score_fn = lambda x, t, score_conditioning: self.sde.score_from_tweedie(self(x, t, score_conditioning), x, t, sde_input)
+
+        return sampling.get_reddiff_sampler(
+            scheduler_name=scheduler_name, sde=sde, 
+            tweedie_fn=tweedie_fn,
+            # score_fn=score_fn,
+            sde_input=sde_input, 
+            conditioning=conditioning, 
+            operator=operator, measurement=measurement, A=A, zeta=zeta, zeta_schedule=zeta_schedule, linearization=linearization,
+            optimizer_name=optimizer_name, lr=lr, stochastic_std=stochastic_std,
+            **kwargs
+        )
 
     def train_dataloader(self):
         return self.data_module.train_dataloader()
@@ -449,8 +479,9 @@ class ScoreModel(pl.LightningModule):
         sampler_type="song", probability_flow=True, N=50, scheduler="ve",
         predictor="euler-maruyama",
         posterior="dps", operator=None, A=None, zeta=60., zeta_schedule="saw-tooth-increase",
-        corrector="ald", r=0.4, corrector_steps=1, 
-        noise_std=1.007, smin=0.05, smax=.8, churn=.1,
+        corrector="ald", r=0.4, corrector_steps=1, #For Song
+        noise_std=1.007, smin=0.05, smax=.8, churn=.1, #For Karras
+        optimizer="adam", lr=1e-1, stochastic_std=1e-4, #For RED-Diff
         **kwargs
     ):
         """
@@ -490,6 +521,14 @@ class ScoreModel(pl.LightningModule):
                 posterior_name=posterior, operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
                 noise_std=noise_std, smin=smin, smax=smax, churn=churn,
                 **kwargs)
+        elif sampler_type == "red-diff":
+            sampler = self.get_reddiff_sampler(
+                scheduler_name=scheduler, sde_input=Y, N=N, 
+                conditioning=score_conditioning, 
+                operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
+                optimizer_name=optimizer, lr=lr, stochastic_std=stochastic_std,
+                **kwargs)
+
         else:
             print("{} is not a valid sampler type!".format(sampler_type))
         sample = sampler()[0]
