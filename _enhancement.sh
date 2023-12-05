@@ -53,9 +53,9 @@ fi;
 
 
 
-################
-### UNIFY XP ###
-################
+###############
+## UNIFY XP ###
+###############
 
 # test_dir="$data_dir/wsj0_derev_with_rir/audio/tt/noisy"
 # clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
@@ -80,14 +80,14 @@ fi;
 # sampler_type="karras"
 
 # # predictor="euler-maruyama"
-# predictor="euler-heun"
-# # predictor="euler-heun-dps"
+# # predictor="euler-heun"
+# predictor="euler-heun-dps"
 
 # corrector="none"
 # # corrector="ald"
 
-# posterior="dps"
-# # posterior="none"
+# # posterior="dps"
+# posterior="none"
 
 # ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
 
@@ -114,14 +114,17 @@ fi;
 ### Test RED-Diff ###
 #####################
 
-test_dir="$data_dir/wsj0_derev_with_rir/audio/tt/noisy"
-clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
-rir_dir="$data_dir/wsj0_derev_with_rir/rir/tt"
-n=2
+# test_dir="$data_dir/wsj0_derev_with_rir/audio/tt/noisy"
+# clean_dir="$data_dir/wsj0_derev_with_rir/audio/tt/clean"
+# rir_dir="$data_dir/wsj0_derev_with_rir/rir/tt"
+test_dir="$data_dir/vctk_derev_with_rir/audio/tt/noisy"
+clean_dir="$data_dir/vctk_derev_with_rir/audio/tt/clean"
+rir_dir="$data_dir/vctk_derev_with_rir/rir/tt"
+n=1
 
 N=200
 scheduler="edm"
-zeta=0.25
+# zeta=0.25
 zeta_schedule="none"
 r=0.4
 alpha=1
@@ -130,12 +133,21 @@ pre="karras"
 sde="edm"
 
 sampler_type="red-diff"
-lr=1e-1
+lr=1e-2
 optimizer="adam"
+# lr=1e-2
+# lr=1e3
+# optimizer="sgd"
+# zeta=0.01
+zeta=0.88
+# zeta=0.75
+
+
 predictor="none"
 corrector="none"
 posterior="none"
 
+# ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
 ckpt_score="$home_dir/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=wsj0_ch=1/version_5/checkpoints/epoch=146.ckpt"
 
 python3 enhancement.py \

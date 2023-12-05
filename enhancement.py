@@ -81,7 +81,7 @@ for parser_ in (base_parser, parser):
     parser_.add_argument("--zeta_schedule", type=str, default="saw-tooth-increase", help="Anneal the log-likelihood term with a zeta step size schedule.")
     parser_.add_argument("--sw", type=float, default=None, help="Switching time between posteriors if posterior==switching.")
     
-    parser_.add_argument("--optimizer", type=str, default="adam", choices=["adam"])
+    parser_.add_argument("--optimizer", type=str, default="adam", choices=["adam", "sgd"])
     parser_.add_argument("--lr", type=float, default=1e-1, help="Learning rate for optimizer used in RED-Diff.")
 
     parser_.add_argument("--measurement_noise", type=float, default=None, help="Additive Gaussian measurement noise. Given as a SNR in dB.")

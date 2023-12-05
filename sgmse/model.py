@@ -441,10 +441,15 @@ class ScoreModel(pl.LightningModule):
             linearization = lambda x: x
         else:
             linearization = lambda x: self._istft(self._backward_transform(x))
+
         tweedie_fn = self.forward
+        score_fn = lambda x, t, score_conditioning: self.sde.score_from_tweedie(self(x, t, score_conditioning), x, t, sde_input)
 
         return sampling.get_reddiff_sampler(
-            scheduler_name=scheduler_name, sde=sde, tweedie_fn=tweedie_fn, sde_input=sde_input, 
+            scheduler_name=scheduler_name, sde=sde, 
+            tweedie_fn=tweedie_fn,
+            # score_fn=score_fn,
+            sde_input=sde_input, 
             conditioning=conditioning, 
             operator=operator, measurement=measurement, A=A, zeta=zeta, zeta_schedule=zeta_schedule, linearization=linearization,
             optimizer_name=optimizer_name, lr=lr, stochastic_std=stochastic_std,
