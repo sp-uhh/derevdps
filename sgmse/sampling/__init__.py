@@ -215,3 +215,121 @@ def get_karras_sampler(
 
 
 
+
+def get_reddiff_sampler(
+    scheduler_name = "edm", sde = "edm", 
+    # score_fn = None, 
+    tweedie_fn = None, 
+    sde_input = None, 
+    conditioning = "none", 
+    operator = "none", measurement = None, A = None, zeta = 0.25, zeta_schedule = "lin-increase", linearization = None,
+    optimizer_name = "adam", lr = 0.1, stochastic_std = 0.,
+    **kwargs
+):
+    """Create a RED-Diff stochastic optimizer, as in:
+    
+    A VARIATIONAL PERSPECTIVE ON SOLVING INVERSE PROBLEMS WITH DIFFUSION MODELS
+    Morteza Mardani, Jiaming Song, Jan Kautz, Arash Vahdat
+    2023
+
+    Adapted from https://github.com/NVlabs/RED-diff/blob/master/algos/reddiff.py
+
+    Args:
+        sde: An `sdes.SDE` object representing the forward SDE.
+        score_fn: A function (typically learned model) that predicts the score.
+        y: A `torch.Tensor`, representing the (non-white-)noisy starting point(s) to condition the prior on.
+
+    Returns:
+        A sampling function that returns samples and the number of function evaluations during sampling.
+    """
+    scheduler_cls = SchedulerRegistry.get_by_name(scheduler_name)
+    scheduler = scheduler_cls(eps=0., **sde.__dict__, **kwargs)
+    
+    def REDDiff_optimizer():
+        """The stochastic optimization function."""
+
+        # x0 = torch.randn_like(measurement)
+        x0 = torch.zeros_like(measurement)
+
+        # x0 = measurement + torch.randn_like(measurement)
+        # x0 = measurement
+        # x0 = torch.linalg.pinv(A) * measurement + torch.randn_like(measurement)
+        # x0 = tweedie_model._stft( operator.pinv(tweedie_model._istft(measurement.squeeze()), A.squeeze())).unsqueeze(0).unsqueeze(0)
+        # x0 = pad_spec(x0)
+        # x0 = sde.prior_sampling(sde_input.shape, sde_input, **kwargs).to(sde_input.device)
+
+        At = A
+
+        timesteps = scheduler.reverse_timesteps(sde.T).to(x0.device)
+        pbar = tqdm.tqdm(list(range(sde.N)))
+        mu = torch.autograd.Variable(x0, requires_grad=True)
+        optimizer = get_optimizer(optimizer_name, params=[mu], lr=lr)
+
+        for i in pbar:
+
+            # Slightly perturb curent prediction (why? Not in the paper? Check)
+            z0 = torch.randn_like(mu)
+            mu_perturbed = mu + stochastic_std * z0
+
+            # Score matching term
+            t = timesteps[i] * torch.ones(sde_input.shape[0], device=sde_input.device)
+            mean, std = sde.marginal_prob(mu_perturbed, t, sde_input)
+            z = torch.randn_like(mu_perturbed)
+            if std.ndim < mu_perturbed.ndim:
+                std = std.view(*std.size(), *((1,)*(mu_perturbed.ndim - std.ndim)))
+            xt = mean + std * z
+
+            # Option 1: with Tweedie
+            # RED score matching regularization (using the Tweedie-wise eq. 10 rather than the score-wise eq. 9)
+            tweedie = tweedie_fn(xt, t, conditioning).detach()
+            # loss_score = torch.mul((tweedie - mu_perturbed).detach(), mu_perturbed).mean()
+            loss_score = (tweedie - mu_perturbed).abs().square().sum()  # Try same as Eloi
+            weight_score = zeta 
+
+            # # Option 2: with score
+            # score = score_fn(xt, t, conditioning).detach()
+            # loss_score = torch.mul((score * std - z).detach(), mu_perturbed).mean()
+            # weight_score = zeta * std
+
+            # Posterior observation term
+            measurement_linear = linearization(measurement.squeeze(0)).unsqueeze(0)
+            mu_perturbed_linear = linearization(mu_perturbed.squeeze(0)).unsqueeze(0)
+            operator.load_weights(At.squeeze(0))
+            measurement_estimated_linear = operator.forward(mu_perturbed_linear)
+            # loss_obs = (measurement_linear - measurement_estimated_linear).abs().square().mean() / 2
+            loss_obs = (measurement_linear - measurement_estimated_linear).abs().square().sum() # Try same as Eloi
+
+            if i % 50 == 0:
+                # print(timesteps[i], std.item())
+                # visualize_one(tweedie, spec_path=".test", name=f"tweedie_{i}")
+                visualize_one(mu, spec_path=".test", name=f"mu_{i}")
+
+            # n_fft = 512
+            # hop_length = 128
+            # stft_kwargs = {"n_fft": n_fft, "hop_length": hop_length, "window": torch.hann_window(n_fft).cuda(), "center": True, "return_complex": True}
+            # measurement_estimated = torch.stft(measurement_estimated_linear.squeeze(), **stft_kwargs)
+            # measurement_verif = torch.stft(measurement_linear.squeeze(), **stft_kwargs)
+            # visualize_one(measurement_estimated, spec_path=".test", name=f"y_hat_{t.cpu().item()}")
+            # visualize_one(measurement_verif, spec_path=".test", name=f"y_{t.cpu().item()}")
+
+            # print(loss_obs, loss_score)
+
+            # Weight losses and optimizer step
+            loss = loss_obs + weight_score * loss_score
+            loss = (1 - weight_score) * loss_obs + weight_score * loss_score # Same as Eloi
+
+
+
+
+            # Optimizer step
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Log distance to measurement in the same fashion as other samplers
+            pbar.set_postfix({'distance': torch.linalg.norm(measurement_linear - measurement_estimated_linear).item()}, refresh=False)
+
+        ns = sde.N
+        return mu, ns, At, loss_obs
+    
+    return REDDiff_optimizer
