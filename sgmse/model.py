@@ -547,7 +547,6 @@ class ScoreModel(pl.LightningModule):
     def unconditional_sampling(self, reference_tensor, 
         sampler_type="song", probability_flow=True, N=50, scheduler="ve",
         predictor="euler-maruyama",
-        posterior="none", operator=None, A=None, zeta=0., zeta_schedule="none",
         corrector="ald", r=0.4, corrector_steps=1, 
         noise_std=1.007, smin=0.05, smax=.8, churn=.1,
         **kwargs
@@ -564,7 +563,7 @@ class ScoreModel(pl.LightningModule):
                 probability_flow=probability_flow,
                 predictor_name=predictor, scheduler_name=scheduler, sde_input=Y, N=N,
                 conditioning=score_conditioning, 
-                posterior_name=posterior, operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
+                posterior_name="none", operator=None, measurement=Y, A=None, zeta=0., zeta_schedule="none",
                 corrector_name=corrector, r=r, corrector_steps=corrector_steps,
                 **kwargs)
         elif sampler_type == "karras":
@@ -572,7 +571,7 @@ class ScoreModel(pl.LightningModule):
                 probability_flow=probability_flow,
                 predictor_name=predictor, scheduler_name=scheduler, sde_input=Y, N=N,
                 conditioning=score_conditioning, 
-                posterior_name=posterior, operator=operator, measurement=Y, A=A, zeta=zeta, zeta_schedule=zeta_schedule,
+                posterior_name="none", operator=None, measurement=Y, A=None, zeta=0., zeta_schedule="none",
                 noise_std=noise_std, smin=smin, smax=smax, churn=churn,
                 **kwargs)
         else:

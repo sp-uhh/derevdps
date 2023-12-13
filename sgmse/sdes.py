@@ -162,18 +162,9 @@ class VESDE(SDE):
     def copy(self):
         return VESDE(self.sigma_min, self.sigma_max, N=self.N)
 
-    # @property
-    # def T(self):
-    #     return 1
-    
     def sde(self, x, t, *args, **kwargs):
         sigma = torch.sqrt(t)
-
-
-        # diffusion = sigma * np.sqrt(2 * self.logsig) #Cheat for reverse ODE: see eq. 209 in Karras , reverse ODE drift term shuold be - 1/2 score
-
-        diffusion = 1.
-
+        diffusion = sigma * np.sqrt(2 * self.logsig) 
         return .0, diffusion
 
     def _mean(self, x0, t, *args, **kwargs):
@@ -239,10 +230,6 @@ class EDM(SDE):
 
     def copy(self):
         return EDM(N=self.N, sigma_min=self.sigma_min, sigma_max=self.sigma_max, rho=self.rho)
-
-    # @property
-    # def T(self):
-    #     return 1
 
     def sde(self, x, t, *args, **kwargs):
         diffusion = torch.sqrt(2 * t)

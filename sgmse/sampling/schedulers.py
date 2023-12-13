@@ -18,10 +18,8 @@ class Scheduler(abc.ABC):
         self.eps = eps
 
     def reverse_timesteps(self, T):
-        # lin_timesteps = torch.linspace(T, self.eps, self.N)
-
-        lin_timesteps = torch.linspace(T, 0., self.N)
-
+        lin_timesteps = torch.linspace(T, self.eps, self.N)
+        # lin_timesteps = torch.linspace(T, 0., self.N)
         timesteps = self.continuous_step(lin_timesteps)
         return torch.cat([timesteps, torch.Tensor([0.])])
 
@@ -29,6 +27,15 @@ class Scheduler(abc.ABC):
     def continuous_step(self, a):
         pass
 
+@SchedulerRegistry.registesr('linear')
+class LinearScheduler(Scheduler):
+
+    def __init__(self, N, eps=1e-3, **kwargs):
+        super().__init__(N, eps)
+
+    def continuous_step(self, a):
+        return a
+    
 @SchedulerRegistry.register("ve")
 class VESongScheduler(Scheduler):
 

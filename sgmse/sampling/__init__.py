@@ -10,7 +10,7 @@ from .predictors import Predictor, PredictorRegistry
 from .correctors import Corrector, CorrectorRegistry
 from .posteriors import Posterior, PosteriorRegistry
 from .operators import LinearOperator, OperatorRegistry
-from .schedulers import Scheduler, SchedulerRegistry
+from .schedulers import Scheduler, SchedulerRegistry, LinearScheduler
 from .optimizers import get_optimizer
 
 from sgmse.util.graphics import visualize_one
@@ -104,14 +104,20 @@ def get_song_sampler(
         At = A
         distance = torch.Tensor([.0])
         timesteps = scheduler.reverse_timesteps(sde.T).to(xt.device)
+
+        # Attention: dt should be actually defined in the Song sampler by the linear time schedule (see Eq. 199 to 210 in Karras)
+        linear_timesteps = LinearScheduler(sde.N, eps=1e-3).reverse_timesteps(sde.T).to(xt.device)
+
         pbar = tqdm.tqdm(list(range(sde.N)))
 
         for i in pbar:
-            dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
+            # dt = timesteps[i+1] - timesteps[i] # dt < 0 (time flowing in reverse)
+            dt = linear_timesteps[i+1] - linear_timesteps[i] # dt < 0 (time flowing in reverse)
+
             t = torch.ones(sde_input.shape[0], device=sde_input.device) * timesteps[i]
             if posterior_name != "none":
-                # posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), sde._std(t).cpu().item(), zeta0)
-                posterior.zeta = pick_zeta_schedule(zeta_schedule, min(1., t.cpu().item() / scheduler.continuous_step(sde.T)), zeta0) #weird fix for now
+                # posterior.zeta = pick_zeta_schedule(zeta_schedule, min(1., t.cpu().item() / scheduler.continuous_step(sde.T)), zeta0) #weird fix for now
+                posterior.zeta = pick_zeta_schedule(zeta_schedule, t.cpu().item(), zeta0)
 
             # corrector
             with torch.no_grad():
@@ -122,6 +128,14 @@ def get_song_sampler(
             xt = xt.requires_grad_(grad_required)
             with torch.set_grad_enabled(grad_required):
                 xt, xt_mean, score = predictor.update_fn(xt, t, dt, conditioning=conditioning, sde_input=sde_input)
+
+            # score = score_fn(xt, t, conditioning)
+            # xt = xt - .5 * score * dt
+
+            # real_t = sde.sigma_min**2 * (sde.sigma_max / sde.sigma_min) ** (2*t) 
+            # diffusion = sde.sde(xt, real_t)[1]
+            # score = score_fn(xt, real_t, conditioning)
+            # xt = xt - .5 * score * dt * diffusion**2
 
             # posterior
             if i < sde.N - 1:

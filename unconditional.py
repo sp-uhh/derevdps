@@ -77,6 +77,7 @@ for i, f in tqdm.tqdm(enumerate(gt_files), total=len(gt_files)):
         predictor=args.predictor,
         corrector=args.corrector,
         scheduler=args.scheduler,
+        posterior="none",
         noise_std=args.noise_std,
         smin=args.smin,
         smax=args.smax,
