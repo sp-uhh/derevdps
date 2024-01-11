@@ -27,7 +27,7 @@ class Scheduler(abc.ABC):
     def continuous_step(self, a):
         pass
 
-@SchedulerRegistry.registesr('linear')
+@SchedulerRegistry.register('linear')
 class LinearScheduler(Scheduler):
 
     def __init__(self, N, eps=1e-3, **kwargs):
@@ -51,7 +51,7 @@ class VESongScheduler(Scheduler):
 class EDMScheduler(Scheduler):
 
     def __init__(self, N, eps=1e-6, sigma_min=1e-5, sigma_max=150., rho=7, **kwargs):
-        print(eps)
+        # print(eps)
         super().__init__(N, eps)
 
         self.sigma_min = sigma_min

@@ -199,7 +199,7 @@ def get_karras_sampler(
             z = noise_std * torch.randn_like(xt)
             gamma = min(churn/sde.N, np.sqrt(2)-1.) if (timesteps[i] > smin and timesteps[i] < smax) else 0.
             t_overnoised = timesteps[i]*(1 + gamma) * torch.ones(sde_input.shape[0], device=sde_input.device)
-            if posterior is not None:
+            if posterior_name != "none":
                 posterior.zeta = pick_zeta_schedule(zeta_schedule, t_overnoised.cpu().item(), zeta0, linear_t=(sde.N-i)/sde.N)
             dt = timesteps[i+1] - timesteps[i]*(1 + gamma) # dt < 0 (time flowing in reverse)
             if gamma > 0:
@@ -217,11 +217,12 @@ def get_karras_sampler(
                     xt, xt_mean, score = predictor.update_fn(xt_previous, t_overnoised, dt, conditioning=conditioning, sde_input=sde_input, **kwargs)
     
             # posterior
-            if i < sde.N - 1 and predictor_name != "euler-heun-dps" and posterior.zeta > 0.:
-                with torch.set_grad_enabled(grad_required):
-                    # xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
-                    xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, xt_previous, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
-                xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
+            if posterior_name != "none":
+                if i < sde.N - 1 and predictor_name != "euler-heun-dps" and posterior.zeta > 0.:
+                    with torch.set_grad_enabled(grad_required):
+                        # xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                        xt, At, distance, yt, x0t_linear = posterior.update_fn(xt, xt_previous, t_overnoised, dt, measurement=measurement, sde_input=sde_input, score=score, A=At, **kwargs)
+                    xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
             pbar.set_postfix({'distance': distance.item()}, refresh=False)
 
             xt, xt_mean, score = xt.detach(), xt_mean.detach(), score.detach()
