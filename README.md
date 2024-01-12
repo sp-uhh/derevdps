@@ -38,12 +38,10 @@ These include options for the backbone DNN, the SDE parameters, the PytorchLight
 
 ## Evaluation
 
-To evaluate on a test set, run
-```bash
-python enhancement.py --test_dir <your_test_dir> --enhanced_dir <your_enhanced_dir> --ckpt <path_to_model_checkpoint>
+To run the model on a test set, run
+```bash _enhancement.sh
 ```
-
-to generate the enhanced .wav files. The `--cpkt` parameter of `enhancement.py` should be the path to a trained model checkpoint, as stored by the logger in `logs/`.
+and replace `test_dir` `rir_dir` and `ckpt_score` with the appropriate paths.
 Check the paper and different options in `enhancement.py` for different posterior/predictor/corrector/diffusion parameters.
 
 ## Data Creation
