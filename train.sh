@@ -46,5 +46,4 @@ srun -K1 -u python3 train.py \
     --num_unconditional_files 25 \
     --sigma_min 0.00001 \
     --sigma_max 15 \
-    --sigma_data 0.17 \
-    --resume_from_checkpoint /export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_ch=1/version_1/checkpoints/last.ckpt
+    --sigma_data 0.17
