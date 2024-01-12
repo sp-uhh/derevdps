@@ -14,7 +14,7 @@
 
 # source .environment/bin/activate
 
-pc=spgpu2
+pc=sppc1
 
 if [ "$pc" = sppc1 ]; then
     data_dir=/data/lemercier/databases
@@ -32,7 +32,6 @@ fi;
 ###############
 
 test_dir="$data_dir/vctk_derev_with_rir/audio/tt/noisy"
-clean_dir="$data_dir/vctk_derev_with_rir/audio/tt/clean"
 rir_dir="$data_dir/vctk_derev_with_rir/rir/tt"
 ckpt_score="/export/home/lemercier/code/_public_repos/derevdps/.logs/sde=EDM_backbone=ncsnpp_data=vctk_pretarget/version_1/checkpoints/epoch=253.ckpt"
 
@@ -40,23 +39,15 @@ n=2
 
 N=200
 scheduler="edm"
-# zeta=0.3
 zeta=7
-# zeta=1000
 r=0.4
 alpha=1
 beta=0.1
 pre="karras"
 sde="edm"
 
-# zeta_schedule="constant"
 zeta_schedule="div-sig"
-# zeta_schedule="saw-tooth-increase"
-
 sampler_type="karras"
-
-# predictor="euler-maruyama"
-# predictor="euler-heun"
 predictor="euler-heun-dps"
 corrector="none"
 posterior="none"

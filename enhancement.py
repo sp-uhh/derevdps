@@ -41,8 +41,8 @@ def get_posterior_sampling_args(model, file, i, args, kernel_kwargs):
     y, sr = torchaudio.load(file)
     if sr != model.data_module.sample_rate:
         y = torchaudio.transforms.Resample(orig_freq=sr, new_freq=model.data_module.sample_rate)(y)
-    # y = y[..., : int(3.5*sr)]
-    y = y[..., : int(12*sr)]
+    y = y[..., : int(3.5*sr)]
+    # y = y[..., : int(12*sr)]
 
     return y, A, zeta, operator, zeta_schedule
         
